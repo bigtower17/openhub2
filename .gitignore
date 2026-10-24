@@ -1,0 +1,5 @@
+# NAND dumps contain per-device secrets (Wi-Fi password, cloud token, keys): never commit them
+backup/
+*.bin
+gwctl.exe
+build/
