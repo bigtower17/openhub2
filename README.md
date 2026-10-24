@@ -46,30 +46,49 @@ instead of its own service launcher. OpenHub2 installs its hook there:
 Nothing is written to the system partitions. Removing `/data/scripts/post_init.sh`
 and rebooting restores the stock behaviour.
 
-## Install (manual, for now)
+## Install
 
-You need root access over telnet first. On firmware up to 1.0.8 the
-[XiaomiGateway3](https://github.com/AlexxIT/XiaomiGateway3) integration
-opens it for you: it only needs the device token from the Xiaomi cloud.
+### Quick start (no Xiaomi app)
 
-1. Build the binaries (Go 1.26+): `make`. This produces `build/gatessh` and
-   `build/zbbridge`.
-2. Copy them to the hub:
+The hub can be configured without the Mi Home app by exploiting the setup
+access point, where the miio token is revealed in cleartext.
+
+1. **Network reset**: hold the hub button ~10 s until the LED blinks orange,
+   then wait for it to blink blue (setup mode).
+2. **Connect** your PC to the hub's open Wi-Fi (`lumi-gateway-mgl001_mibt…`).
+3. **Build** (Go 1.26+): `make && make ohinstall`.
+4. **Run** the installer:
+   ```
+   build/ohinstall -ssid "YourNetwork" -password "YourPassword" -key "GATEWAYKEY16CHAR"
+   ```
+   The installer discovers the hub, reads the token, configures Wi-Fi and
+   (when a gateway key is provided) opens a root shell.
+
+   To get the gateway key you can add the hub to Mi Home temporarily and
+   read it with [XiaomiGateway3](https://github.com/AlexxIT/XiaomiGateway3),
+   or extract it from the Xiaomi cloud. Without `-key`, the installer still
+   configures Wi-Fi and prints the token for later use.
+
+5. **Deploy** the files to the hub (over telnet/SSH, see step output).
+6. In Home Assistant: **Add integration → ZHA**, radio type **EZSP**, path
+   `socket://<hub-ip>:8888`.
+7. Open `http://<hub-ip>/` in a browser for the web panel (same password
+   as SSH).
+
+### Manual install
+
+If you already have root access (telnet or SSH):
+
+1. `make` → produces `build/gatessh`, `build/zbbridge`, `build/ohweb`.
+2. Copy to the hub:
    - `build/gatessh` → `/data/gatessh/gatessh`
    - `build/zbbridge` → `/data/openhub2/zbbridge`
    - `build/ohweb` → `/data/openhub2/ohweb`
    - `hub/data/openhub2/*` → `/data/openhub2/`
    - `hub/data/scripts/post_init.sh` → `/data/scripts/post_init.sh`
-   - then `chmod +x` them all.
-3. Set the SSH password: `/data/gatessh/gatessh -set-password` (reads it from
-   stdin), or put your public key in `/data/gatessh/authorized_keys`.
-4. Switch mode with `/data/openhub2/ohctl mode openhub2`. The hub reboots.
-5. In Home Assistant: **Add integration → ZHA**, radio type **EZSP**, path
-   `socket://<hub-ip>:8888`.
-6. Open `http://<hub-ip>/` in a browser for the web panel (same password
-   as SSH).
-
-A one-step installer is planned.
+   - `chmod +x` them all.
+3. Set the SSH password: `/data/gatessh/gatessh -set-password`.
+4. Switch mode: `/data/openhub2/ohctl mode openhub2` (reboots).
 
 ## Caveats
 
@@ -94,7 +113,8 @@ A one-step installer is planned.
 
 ## Roadmap
 
-- One-step installer: open telnet via miio, upload, set password.
+- ~~One-step installer~~: `ohinstall` configures Wi-Fi and opens root shell
+  from the setup AP. File deployment over SSH is next.
 - Bluetooth proxy for Home Assistant.
 - NCP firmware upgrade (newer EmberZNet, for Zigbee2MQTT).
 - Full open userland (Buildroot) on the hub's spare A/B slot.

@@ -84,6 +84,60 @@ func (d *Device) Hello() error {
 	return nil
 }
 
+// DiscoverResult holds what a miio handshake reveals about a device.
+type DiscoverResult struct {
+	DeviceID uint32
+	Stamp    uint32
+	TokenHex string // 32 hex chars; empty if the device is provisioned (all-ff)
+}
+
+// Discover sends the miio hello handshake to host:54321 and returns the
+// device id and, when the device is unprovisioned, its token in cleartext.
+// Provisioned devices return ff…ff in the token field instead.
+func Discover(host string) (*DiscoverResult, error) {
+	pkt := make([]byte, 32)
+	binary.BigEndian.PutUint16(pkt[0:], 0x2131)
+	binary.BigEndian.PutUint16(pkt[2:], 32)
+	for i := 4; i < 32; i++ {
+		pkt[i] = 0xff
+	}
+	addr := net.JoinHostPort(host, "54321")
+	c, err := net.Dial("udp", addr)
+	if err != nil {
+		return nil, err
+	}
+	defer c.Close()
+	if _, err := c.Write(pkt); err != nil {
+		return nil, err
+	}
+	_ = c.SetReadDeadline(time.Now().Add(5 * time.Second))
+	buf := make([]byte, 4096)
+	n, err := c.Read(buf)
+	if err != nil {
+		return nil, fmt.Errorf("discover %s: %w", host, err)
+	}
+	resp := buf[:n]
+	if len(resp) < 32 || binary.BigEndian.Uint16(resp) != 0x2131 {
+		return nil, fmt.Errorf("discover %s: bad response", host)
+	}
+	r := &DiscoverResult{
+		DeviceID: binary.BigEndian.Uint32(resp[8:]),
+		Stamp:    binary.BigEndian.Uint32(resp[12:]),
+	}
+	tok := resp[16:32]
+	allFF := true
+	for _, b := range tok {
+		if b != 0xff {
+			allFF = false
+			break
+		}
+	}
+	if !allFF {
+		r.TokenHex = hex.EncodeToString(tok)
+	}
+	return r, nil
+}
+
 // Call sends a method with params and returns the decoded "result".
 func (d *Device) Call(method string, params any) (json.RawMessage, error) {
 	if d.deviceID == 0 {
