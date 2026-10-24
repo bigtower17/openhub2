@@ -1,3 +1,5 @@
-userland/** text eol=lf
+* text=auto
 hub/** text eol=lf
+userland/** text eol=lf
 *.sh text eol=lf
+*.go text eol=lf
