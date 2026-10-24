@@ -93,3 +93,40 @@ Telnet can be opened over the LAN with the miio `system_command` method,
 signed with the device token and the gateway key (the method implemented by
 [XiaomiGateway3](https://github.com/AlexxIT/XiaomiGateway3)). Root has an
 empty password after `passwd -d`. Telnet does not survive a reboot.
+
+## Resets and setup mode
+
+Two very different resets exist:
+
+- **Network reset**, `/bin/remove_net.sh button|app`, triggered by
+  `mha_master` from the button or the app. It stops the cloud services,
+  clears only the cloud binding (`persist.app.miio_dtoken`, `miio_uid`,
+  `miio_country`, `cloud_provisioned`, `/data/miio/config.db`, BLE pairing data,
+  Matter certificates) and starts the setup access point. On `mgl001` the
+  Wi-Fi credentials are kept. **Everything else in `/data` survives**,
+  including a custom `post_init.sh`.
+- **Factory reset**, `fw_manager.sh` → `factory_clean`, **formats `/data`**
+  (`ubifs_format.sh 1 /data`).
+
+`/bin/reset_wifi_info.sh <ssid> <password>` stores new Wi-Fi credentials and
+reconnects in station mode, with no cloud involved.
+
+### Setup access point
+
+After a network reset, the hub starts an **open** access point on `p2p0`:
+
+| | |
+|---|---|
+| SSID | `lumi-gateway-mgl001_mibt` + last 4 hex digits of the MAC |
+| Hub address | `192.168.49.1` |
+| Channel | 11 (observed) |
+
+While unprovisioned, the hub answers the miio handshake (UDP 54321) with
+its **device token in clear** in the checksum field, exactly like older miio
+devices. Once provisioned, the same field is `ff…ff`. The revealed token was
+verified with an encrypted `miIO.info` call.
+
+This means the hub can be set up without the Mi Home app or a Xiaomi
+account: join the setup AP, read the token from the handshake, then
+configure it over miio.
+
