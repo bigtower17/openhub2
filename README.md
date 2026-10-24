@@ -21,6 +21,9 @@ Xiaomi/Aqara, and it keeps working without the Xiaomi cloud.
 - **Mode switch** (`ohctl`): `openhub2` hands the radio to `zbbridge`, while
   `xiaomi` keeps the stock Mi Home Zigbee. Wi-Fi, Bluetooth and the rest of
   the stock services keep running in both modes.
+- **Web panel** (`ohweb`): a lightweight management page on port 80 with
+  system status, mode switch, Wi-Fi configuration, log viewer and reboot.
+  Protected by the same password as SSH.
 - **Hardware documentation** in [doc/hardware.md](doc/hardware.md): SoC
   (SigmaStar Pioneer3 SSC020A), NAND layout, A/B slots, boot flow, Zigbee
   stack.
@@ -37,7 +40,8 @@ instead of its own service launcher. OpenHub2 installs its hook there:
    check passes;
 3. starts the stock services (`fw_manager.sh -r`), exactly as the firmware
    would;
-4. in `openhub2` mode, starts `zbbridge`.
+4. in `openhub2` mode, starts `zbbridge`;
+5. starts `ohweb` (the web panel on port 80).
 
 Nothing is written to the system partitions. Removing `/data/scripts/post_init.sh`
 and rebooting restores the stock behaviour.
@@ -53,6 +57,7 @@ opens it for you: it only needs the device token from the Xiaomi cloud.
 2. Copy them to the hub:
    - `build/gatessh` → `/data/gatessh/gatessh`
    - `build/zbbridge` → `/data/openhub2/zbbridge`
+   - `build/ohweb` → `/data/openhub2/ohweb`
    - `hub/data/openhub2/*` → `/data/openhub2/`
    - `hub/data/scripts/post_init.sh` → `/data/scripts/post_init.sh`
    - then `chmod +x` them all.
@@ -61,6 +66,8 @@ opens it for you: it only needs the device token from the Xiaomi cloud.
 4. Switch mode with `/data/openhub2/ohctl mode openhub2`. The hub reboots.
 5. In Home Assistant: **Add integration → ZHA**, radio type **EZSP**, path
    `socket://<hub-ip>:8888`.
+6. Open `http://<hub-ip>/` in a browser for the web panel (same password
+   as SSH).
 
 A one-step installer is planned.
 

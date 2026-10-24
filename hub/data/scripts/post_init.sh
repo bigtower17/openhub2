@@ -30,6 +30,14 @@ if [ "$MODE" = "openhub2" ] && [ -x $OH/zbbridge ] && [ -f /tmp/openhub2-ready ]
     done ) &
 fi
 
+# 4b. Web panel on port 80 (any mode).
+if [ -x $OH/ohweb ]; then
+    ( while true; do
+        $OH/ohweb >>/tmp/ohweb.log 2>&1
+        sleep 5
+    done ) &
+fi
+
 # 5. Wi-Fi fallback: without a Xiaomi cloud binding the hub may come up in
 #    setup mode (open AP) instead of joining the saved network. If there is
 #    still no IP after 2 minutes, rejoin the saved Wi-Fi (credentials kept in
