@@ -18,8 +18,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/bigtower17/openhub2/internal/ezsp"
 	"golang.org/x/sys/unix"
 )
+
+const networkFile = "/tmp/zbbridge-network.json"
 
 var (
 	addr     = flag.String("addr", ":8888", "TCP listen address")
@@ -28,6 +31,7 @@ var (
 	rtscts   = flag.Bool("rtscts", true, "hardware flow control")
 	resetPin = flag.Int("reset-gpio", 44, "GPIO driving the NCP reset line (active high), -1 to disable")
 	probe    = flag.Bool("probe", false, "send an ASH reset, print the reply and exit")
+	scan     = flag.Bool("scan", false, "scan the NCP for network info and devices, write JSON to "+networkFile+" and exit")
 )
 
 func main() {
@@ -46,6 +50,12 @@ func main() {
 		}
 		return
 	}
+	if *scan {
+		scanNCP()
+		return
+	}
+
+	scanNCP()
 
 	ln, err := net.Listen("tcp", *addr)
 	if err != nil {
@@ -203,6 +213,27 @@ func openSerial(path string, baudRate int, hw bool) (*serial, error) {
 	}
 	_ = unix.IoctlSetInt(fd, unix.TCFLSH, unix.TCIOFLUSH)
 	return &serial{fd: fd}, nil
+}
+
+func scanNCP() {
+	ser, err := openSerial(*port, *baud, *rtscts)
+	if err != nil {
+		log.Printf("scan: open %s: %v", *port, err)
+		return
+	}
+	result, err := ezsp.Scan(ser)
+	ser.Close()
+	if err != nil {
+		log.Printf("scan: %v", err)
+		return
+	}
+	if err := os.WriteFile(networkFile, result.JSON(), 0o644); err != nil {
+		log.Printf("scan: write %s: %v", networkFile, err)
+		return
+	}
+	log.Printf("scan: %s ch%d pan=0x%04X %d devices → %s",
+		result.Network.Status, result.Network.Channel, result.Network.PanID,
+		len(result.Devices), networkFile)
 }
 
 func gpioSet(pin, val int) error {

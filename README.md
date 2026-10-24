@@ -62,17 +62,19 @@ access point, where the miio token is revealed in cleartext.
    build/ohinstall -ssid "YourNetwork" -password "YourPassword"
    ```
    The installer discovers the hub, reads the token, **recovers the gateway
-   key over LAN** (via `async_device_feedback_log`), opens a root shell and
-   configures Wi-Fi. No Xiaomi app or cloud account needed.
+   key over LAN** (via `async_device_feedback_log`), opens a root shell,
+   **deploys all files via SSH**, asks for a password and configures Wi-Fi.
+   No Xiaomi app or cloud account needed.
 
    If automatic key recovery fails on your firmware, pass it manually with
    `-key <16-char-key>` (get it from `cat /data/miio/device.conf` over SSH,
    or via [XiaomiGateway3](https://github.com/AlexxIT/XiaomiGateway3)).
 
-5. **Deploy** the files to the hub (over telnet/SSH, see step output).
-6. In Home Assistant: **Add integration → ZHA**, radio type **EZSP**, path
+   Use `-no-deploy` to skip SSH deployment and do it manually.
+
+5. In Home Assistant: **Add integration → ZHA**, radio type **EZSP**, path
    `socket://<hub-ip>:8888`.
-7. Open `http://<hub-ip>/` in a browser for the web panel (same password
+6. Open `http://<hub-ip>/` in a browser for the web panel (same password
    as SSH).
 
 ### Manual install
@@ -114,8 +116,8 @@ If you already have root access (telnet or SSH):
 ## Roadmap
 
 - ~~One-step installer~~: `ohinstall` recovers the gateway key, opens root
-  shell and configures Wi-Fi from the setup AP. File deployment over SSH
-  is next.
+  shell, deploys files over SSH, sets the password and configures Wi-Fi
+  from the setup AP — fully automated.
 - Bluetooth proxy for Home Assistant.
 - NCP firmware upgrade (newer EmberZNet, for Zigbee2MQTT).
 - Full open userland (Buildroot) on the hub's spare A/B slot.

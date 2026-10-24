@@ -6,6 +6,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"html/template"
@@ -37,6 +38,7 @@ func main() {
 	s := &server{hash: bytes.TrimSpace(raw)}
 	s.tmpl = template.Must(template.New("").Funcs(template.FuncMap{
 		"join": strings.Join,
+		"ge":   func(a, b uint8) bool { return a >= b },
 	}).Parse(templates))
 
 	http.HandleFunc("/", s.auth(s.dashboard))
@@ -73,6 +75,7 @@ type statusData struct {
 	NTP         bool
 	FwVer       string
 	MAC         string
+	Zigbee      *zigbeeInfo
 }
 
 func getStatus() statusData {
@@ -130,12 +133,50 @@ func getStatus() statusData {
 	if b, err := os.ReadFile("/sys/class/net/wlan0/address"); err == nil {
 		st.MAC = strings.ToUpper(strings.TrimSpace(string(b)))
 	}
+	st.Zigbee = getZigbeeInfo()
 	return st
 }
 
 func alive(name string) bool {
 	out, _ := exec.Command("pidof", name).Output()
 	return len(bytes.TrimSpace(out)) > 0
+}
+
+// --- zigbee network info (from zbbridge scan) --------------------------------
+
+type zigbeeNetwork struct {
+	Status       string `json:"status"`
+	Channel      uint8  `json:"channel"`
+	PanID        uint16 `json:"pan_id"`
+	ExtPanID     string `json:"ext_pan_id"`
+	EUI64        string `json:"eui64"`
+	EZSPVersion  uint8  `json:"ezsp_version"`
+	StackVersion string `json:"stack_version"`
+}
+
+type zigbeeDevice struct {
+	EUI64   string `json:"eui64"`
+	ShortID uint16 `json:"short_id"`
+	LQI     uint8  `json:"lqi"`
+	Age     uint8  `json:"age"`
+}
+
+type zigbeeInfo struct {
+	Network   zigbeeNetwork  `json:"network"`
+	Devices   []zigbeeDevice `json:"devices"`
+	ScannedAt string         `json:"scanned_at"`
+}
+
+func getZigbeeInfo() *zigbeeInfo {
+	b, err := os.ReadFile("/tmp/zbbridge-network.json")
+	if err != nil {
+		return nil
+	}
+	var info zigbeeInfo
+	if json.Unmarshal(b, &info) != nil {
+		return nil
+	}
+	return &info
 }
 
 // --- handlers ---------------------------------------------------------------
@@ -302,6 +343,42 @@ label{font-size:.9em;color:#52525b;font-weight:500}
 <div class="row"><span class="lbl">/data free</span><span class="val">{{.FreeData}}</span></div>
 {{if .FwVer}}<div class="row"><span class="lbl">Firmware</span><span class="val">{{.FwVer}}</span></div>{{end}}
 </div>
+
+{{if .Zigbee}}
+<div class="card">
+<h2>Zigbee Network</h2>
+<div class="row"><span class="lbl">Status</span>
+  <span class="val {{if eq .Zigbee.Network.Status "joined"}}ok{{else}}warn{{end}}">{{.Zigbee.Network.Status}}</span></div>
+<div class="row"><span class="lbl">Channel</span><span class="val">{{.Zigbee.Network.Channel}}</span></div>
+<div class="row"><span class="lbl">PAN ID</span><span class="val">0x{{printf "%04X" .Zigbee.Network.PanID}}</span></div>
+{{if .Zigbee.Network.ExtPanID}}<div class="row"><span class="lbl">Ext PAN ID</span><span class="val" style="font-size:.85em">{{.Zigbee.Network.ExtPanID}}</span></div>{{end}}
+{{if .Zigbee.Network.EUI64}}<div class="row"><span class="lbl">Coordinator</span><span class="val" style="font-size:.85em">{{.Zigbee.Network.EUI64}}</span></div>{{end}}
+<div class="row"><span class="lbl">EZSP / Stack</span><span class="val">v{{.Zigbee.Network.EZSPVersion}} / {{.Zigbee.Network.StackVersion}}</span></div>
+{{if .Zigbee.ScannedAt}}<div class="row"><span class="lbl">Scanned</span><span class="val" style="font-size:.85em">{{.Zigbee.ScannedAt}}</span></div>{{end}}
+</div>
+
+{{if .Zigbee.Devices}}
+<div class="card">
+<h2>Zigbee Devices ({{len .Zigbee.Devices}})</h2>
+<table style="width:100%;font-size:.88em;border-collapse:collapse">
+<tr style="text-align:left;border-bottom:2px solid #e4e4e7">
+  <th style="padding:6px 4px;color:#71717a;font-weight:600;font-size:.82em">IEEE ADDRESS</th>
+  <th style="padding:6px 4px;color:#71717a;font-weight:600;font-size:.82em">NWK</th>
+  <th style="padding:6px 4px;color:#71717a;font-weight:600;font-size:.82em">LQI</th>
+</tr>
+{{range .Zigbee.Devices}}
+<tr style="border-bottom:1px solid #f4f4f5">
+  <td style="padding:6px 4px;font-family:monospace;font-size:.9em">{{.EUI64}}</td>
+  <td style="padding:6px 4px">0x{{printf "%04X" .ShortID}}</td>
+  <td style="padding:6px 4px">
+    <span class="{{if ge .LQI 170}}ok{{else if ge .LQI 85}}warn{{else}}off{{end}}">{{.LQI}}</span>
+  </td>
+</tr>
+{{end}}
+</table>
+</div>
+{{end}}
+{{end}}
 
 <div class="card">
 <h2>Actions</h2>
