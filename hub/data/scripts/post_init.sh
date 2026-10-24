@@ -29,3 +29,16 @@ if [ "$MODE" = "openhub2" ] && [ -x $OH/zbbridge ] && [ -f /tmp/openhub2-ready ]
         sleep 5
     done ) &
 fi
+
+# 5. Wi-Fi fallback: without a Xiaomi cloud binding the hub may come up in
+#    setup mode (open AP) instead of joining the saved network. If there is
+#    still no IP after 2 minutes, rejoin the saved Wi-Fi (credentials kept in
+#    persist.app.wifi_*).
+( sleep 120
+  if ifconfig wlan0 2>/dev/null | grep -q "inet addr" || ifconfig eth0 2>/dev/null | grep -q "inet addr"; then
+      echo "$(date) network ok at boot" >> $OH/wifi-fallback.log
+  else
+      echo "$(date) no IP after boot, rejoining saved Wi-Fi" >> $OH/wifi-fallback.log
+      /bin/wifi_start.sh INIT >/dev/null 2>&1
+      /bin/wifi_start.sh STA >/dev/null 2>&1
+  fi ) &
