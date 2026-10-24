@@ -1,0 +1,9 @@
+#!/bin/sh
+# /data is UBI volume 0 on mtd11, as on the stock firmware.
+case "$1" in
+start)
+	[ -e /dev/ubi1 ] || ubiattach /dev/ubi_ctrl -m 11 -d 1
+	mount -t ubifs ubi1_0 /data || echo "S02data: cannot mount /data" >&2
+	;;
+stop) umount /data ;;
+esac

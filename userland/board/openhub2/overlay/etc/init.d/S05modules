@@ -1,0 +1,12 @@
+#!/bin/sh
+# Stock kernel modules (copied from the stock firmware to /data/openhub2/stock).
+M=/lib/modules/4.9.84
+case "$1" in
+start)
+	for m in usb-common usbcore ehci-hcd ccm cfg80211 mac80211; do
+		insmod $M/$m.ko || echo "S05modules: $m failed" >&2
+	done
+	insmod $M/ssw105at.ko stacfgpath=/etc/ssw105at-wifi.cfg || echo "S05modules: ssw105at failed" >&2
+	;;
+stop) ;;
+esac

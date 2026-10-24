@@ -1,0 +1,22 @@
+#!/bin/sh
+# Re-arm the "try OpenHub2 once" boot only when this boot is healthy: Wi-Fi
+# has an address and SSH answers. Otherwise the next boot is the stock system.
+LOG=/data/openhub2/userland.log
+healthy() {
+	ifconfig wlan0 2>/dev/null | grep -q "inet addr" && netstat -ltn 2>/dev/null | grep -q ':22 '
+}
+case "$1" in
+start)
+	( i=0
+	while [ $i -lt 180 ]; do
+		if healthy; then
+			fw_setenv oh_next run oh_try && echo "$(date) boot ok, re-armed" >>$LOG
+			touch /tmp/openhub2-bootok
+			exit 0
+		fi
+		sleep 2; i=$((i + 2))
+	done
+	echo "$(date) boot not healthy after 180s, next boot is stock" >>$LOG ) &
+	;;
+stop) ;;
+esac

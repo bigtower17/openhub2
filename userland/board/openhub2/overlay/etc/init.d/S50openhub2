@@ -1,0 +1,21 @@
+#!/bin/sh
+# OpenHub2 services live in /data and are the same binaries as in stock mode.
+OH=/data/openhub2
+
+keep() {
+	name=$1; shift
+	( while true; do
+		[ -x "$1" ] && "$@" >>/tmp/$name.log 2>&1
+		sleep 5
+	done ) &
+}
+
+case "$1" in
+start)
+	keep gatessh /data/gatessh/gatessh -addr :22
+	keep zbbridge $OH/zbbridge
+	keep btproxy $OH/btproxy
+	keep ohweb $OH/ohweb
+	;;
+stop) ;;
+esac

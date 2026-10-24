@@ -1,0 +1,54 @@
+name: userland
+
+on:
+  push:
+    paths:
+      - "userland/**"
+      - ".github/workflows/userland.yml"
+  workflow_dispatch:
+
+env:
+  BUILDROOT_VERSION: "2026.02.3"
+
+jobs:
+  rootfs:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends bc cpio rsync unzip file wget
+
+      - name: Cache Buildroot downloads
+        uses: actions/cache@v4
+        with:
+          path: dl
+          key: br-dl-${{ env.BUILDROOT_VERSION }}-${{ hashFiles('userland/configs/*') }}
+          restore-keys: br-dl-${{ env.BUILDROOT_VERSION }}-
+
+      - name: Fetch Buildroot
+        run: git clone --depth 1 --branch "$BUILDROOT_VERSION" https://gitlab.com/buildroot.org/buildroot.git buildroot
+
+      - name: Build root filesystem
+        env:
+          BR2_DL_DIR: ${{ github.workspace }}/dl
+          OPENHUB2_VERSION: ${{ github.sha }}
+        run: |
+          chmod +x userland/board/openhub2/post-build.sh
+          make -C buildroot BR2_EXTERNAL="$PWD/userland" O="$PWD/out" openhub2_defconfig
+          make -C out -j"$(nproc)"
+
+      - name: Check size (rootfs slot is 16 MiB)
+        run: |
+          size=$(stat -c %s out/images/rootfs.squashfs)
+          echo "rootfs.squashfs: $size bytes"
+          test "$size" -le 16777216
+          sha256sum out/images/rootfs.squashfs > out/images/rootfs.squashfs.sha256
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: openhub2-rootfs
+          path: |
+            out/images/rootfs.squashfs
+            out/images/rootfs.squashfs.sha256
