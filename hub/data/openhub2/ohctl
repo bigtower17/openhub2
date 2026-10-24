@@ -1,0 +1,23 @@
+#!/bin/sh
+# ohctl: switch the hub between stock Xiaomi Zigbee and OpenHub2.
+#   ohctl status
+#   ohctl mode openhub2|xiaomi   (reboots)
+OH=/data/openhub2
+case "$1" in
+status)
+    echo "mode:      $(cat $OH/mode 2>/dev/null || echo xiaomi)"
+    [ -f /tmp/openhub2-ready ] && echo "stock zigbee: disabled" || echo "stock zigbee: active"
+    pidof zbbridge >/dev/null && echo "zbbridge:  running (tcp :8888)" || echo "zbbridge:  stopped"
+    ;;
+mode)
+    case "$2" in
+    openhub2|xiaomi)
+        echo "$2" > $OH/mode && sync
+        echo "mode set to $2, rebooting"
+        reboot
+        ;;
+    *) echo "usage: ohctl mode openhub2|xiaomi"; exit 1 ;;
+    esac
+    ;;
+*) echo "usage: ohctl status | ohctl mode openhub2|xiaomi"; exit 1 ;;
+esac

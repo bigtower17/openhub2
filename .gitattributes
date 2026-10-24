@@ -1,0 +1,4 @@
+* text=auto
+hub/** text eol=lf
+*.sh text eol=lf
+*.go text eol=lf
