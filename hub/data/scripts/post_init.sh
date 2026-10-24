@@ -27,9 +27,17 @@ fi
 # 3. The stock Xiaomi services, exactly what rcS would have run.
 /bin/fw_manager.sh -r
 
-# 4. OpenHub2 mode: network Zigbee coordinator on TCP :8888.
+# 4. OpenHub2 mode: network Zigbee coordinator on TCP :8888 and ESPHome
+#    Bluetooth proxy on :6053.
 if [ "$MODE" = "openhub2" ] && [ -f /tmp/openhub2-ready ]; then
     keep zbbridge $OH/zbbridge
+    # btproxy leaves this marker while it initializes the BLE controller; if
+    # the hub died during that, skip btproxy on this boot.
+    if [ -f $OH/btproxy.starting ]; then
+        mv $OH/btproxy.starting $OH/btproxy.crashed
+    else
+        keep btproxy $OH/btproxy
+    fi
 fi
 
 # 4b. Web panel on port 80 (any mode).

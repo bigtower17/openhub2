@@ -18,9 +18,18 @@ Xiaomi/Aqara, and it keeps working without the Xiaomi cloud.
   - Tested with Home Assistant 2026.10.3 (ZHA, bellows 1.1.0): a Tuya
     `TS004F` button paired through the hub, got its ZHA quirk applied and
     fired `zha_event`s for single/double/long presses.
-- **Mode switch** (`ohctl`): `openhub2` hands the radio to `zbbridge`, while
-  `xiaomi` keeps the stock Mi Home Zigbee. Wi-Fi, Bluetooth and the rest of
-  the stock services keep running in both modes.
+- **Bluetooth proxy** (`btproxy`): turns the hub's Bluetooth LE radio into an
+  [ESPHome Bluetooth proxy](https://esphome.io/components/bluetooth_proxy/).
+  Home Assistant discovers it over mDNS as an ESPHome device (port `6053`,
+  no encryption key) and receives every BLE advertisement the hub hears:
+  Xiaomi, Govee, Switchbot, BTHome sensors and so on. Passive and active
+  scanning; connections to BLE devices are not supported yet.
+  - The controller is a Telink chip speaking HCI over the Three-wire UART
+    (H5) protocol on `/dev/ttyS2` at 1 Mbaud, reset by GPIO 60.
+- **Mode switch** (`ohctl`): `openhub2` hands the Zigbee radio to `zbbridge`
+  and the Bluetooth radio to `btproxy`, while `xiaomi` keeps the stock Mi
+  Home Zigbee and Bluetooth. Wi-Fi and the rest of the stock services keep
+  running in both modes.
 - **Web panel** (`ohweb`): a lightweight management page on port 80 with
   system status, mode switch, Wi-Fi configuration, log viewer and reboot.
   Protected by the same password as SSH.
@@ -35,12 +44,13 @@ instead of its own service launcher. OpenHub2 installs its hook there:
 
 1. starts `gatessh`;
 2. in `openhub2` mode, bind-mounts patched copies of `fw_manager.sh` and
-   `app_monitor.sh` that leave out the stock Zigbee host. The read-only
+   `app_monitor.sh` that leave out the stock Zigbee host and the stock BLE
+   daemon (`miio_bt`). The read-only
    originals are never modified, and the patch is only applied if every
    check passes;
 3. starts the stock services (`fw_manager.sh -r`), exactly as the firmware
    would;
-4. in `openhub2` mode, starts `zbbridge`;
+4. in `openhub2` mode, starts `zbbridge` and `btproxy`;
 5. starts `ohweb` (the web panel on port 80).
 
 Nothing is written to the system partitions. Removing `/data/scripts/post_init.sh`
@@ -81,11 +91,13 @@ access point, where the miio token is revealed in cleartext.
 
 If you already have root access (telnet or SSH):
 
-1. `make` → produces `build/gatessh`, `build/zbbridge`, `build/ohweb`.
+1. `make` → produces `build/gatessh`, `build/zbbridge`, `build/ohweb`,
+   `build/btproxy`.
 2. Copy to the hub:
    - `build/gatessh` → `/data/gatessh/gatessh`
    - `build/zbbridge` → `/data/openhub2/zbbridge`
    - `build/ohweb` → `/data/openhub2/ohweb`
+   - `build/btproxy` → `/data/openhub2/btproxy`
    - `hub/data/openhub2/*` → `/data/openhub2/`
    - `hub/data/scripts/post_init.sh` → `/data/scripts/post_init.sh`
    - `chmod +x` them all.
@@ -101,9 +113,11 @@ If you already have root access (telnet or SSH):
   unknown: if a device does not show up, reset it again with the pairing
   window open.
 
-- **Zigbee devices do not migrate.** In `openhub2` mode the Mi Home Zigbee
-  devices stop working and must be paired again in ZHA. Bluetooth and Mesh
-  devices are not affected.
+- **Zigbee and Bluetooth devices do not migrate.** In `openhub2` mode the Mi
+  Home Zigbee devices stop working and must be paired again in ZHA, and the
+  hub no longer acts as Mi Home's Bluetooth/Mesh gateway: BLE sensors are
+  read through Home Assistant instead (encrypted Xiaomi sensors need their
+  bindkey).
 - The radio runs EmberZNet **6.6.6** (EZSP v7). ZHA works with it.
   Zigbee2MQTT's current Ember driver expects newer firmware, so that is
   untested.
@@ -118,7 +132,8 @@ If you already have root access (telnet or SSH):
 - ~~One-step installer~~: `ohinstall` recovers the gateway key, opens root
   shell, deploys files over SSH, sets the password and configures Wi-Fi
   from the setup AP — fully automated.
-- Bluetooth proxy for Home Assistant.
+- ~~Bluetooth proxy for Home Assistant~~: `btproxy` (scanning). Next: active
+  connections and API encryption.
 - NCP firmware upgrade (newer EmberZNet, for Zigbee2MQTT).
 - Full open userland (Buildroot) on the hub's spare A/B slot.
 

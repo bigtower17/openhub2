@@ -77,6 +77,8 @@ type statusData struct {
 	FwVer       string
 	MAC         string
 	Zigbee      *zigbeeInfo
+	BTProxy     string
+	BT          *btInfo
 }
 
 func getStatus() statusData {
@@ -135,6 +137,11 @@ func getStatus() statusData {
 		st.MAC = strings.ToUpper(strings.TrimSpace(string(b)))
 	}
 	st.Zigbee = getZigbeeInfo()
+	st.BTProxy = "stopped"
+	if alive("btproxy") {
+		st.BTProxy = "running"
+		st.BT = getBTInfo()
+	}
 	return st
 }
 
@@ -196,6 +203,30 @@ func getZigbeeInfo() *zigbeeInfo {
 	return &info
 }
 
+// --- bluetooth proxy status (from btproxy) ----------------------------------
+
+type btInfo struct {
+	Name           string `json:"name"`
+	BluetoothMAC   string `json:"bluetooth_mac"`
+	Controller     string `json:"controller"`
+	Clients        int    `json:"clients"`
+	Advertisements int    `json:"advertisements"`
+	Devices        int    `json:"devices_5min"`
+	UpdatedAt      string `json:"updated_at"`
+}
+
+func getBTInfo() *btInfo {
+	b, err := os.ReadFile("/tmp/btproxy.json")
+	if err != nil {
+		return nil
+	}
+	var info btInfo
+	if json.Unmarshal(b, &info) != nil {
+		return nil
+	}
+	return &info
+}
+
 // --- handlers ---------------------------------------------------------------
 
 func (s *server) dashboard(w http.ResponseWriter, r *http.Request) {
@@ -233,6 +264,7 @@ func (s *server) logs(w http.ResponseWriter, r *http.Request) {
 	entries := []struct{ name, path string }{
 		{"gatessh", "/tmp/gatessh.log"},
 		{"zbbridge", "/tmp/zbbridge.log"},
+		{"btproxy", "/tmp/btproxy.log"},
 		{"prepare", "/tmp/openhub2-prepare.log"},
 		{"wifi-fallback", dataDir + "/wifi-fallback.log"},
 		{"dmesg", ""},
@@ -419,6 +451,21 @@ label{font-size:.9em;color:#52525b;font-weight:500}
 </div>
 {{end}}
 {{end}}
+
+<div class="card">
+<h2>Bluetooth Proxy</h2>
+<div class="row"><span class="lbl">btproxy</span>
+  <span class="val {{if eq .BTProxy "running"}}ok{{else}}off{{end}}">{{.BTProxy}}{{if eq .BTProxy "running"}} · tcp :6053{{end}}</span></div>
+{{with .BT}}
+<div class="row"><span class="lbl">Name</span><span class="val" style="font-size:.85em">{{.Name}}</span></div>
+<div class="row"><span class="lbl">Bluetooth MAC</span><span class="val" style="font-size:.85em">{{.BluetoothMAC}}</span></div>
+<div class="row"><span class="lbl">Home Assistant</span>
+  <span class="val {{if .Clients}}ok{{else}}warn{{end}}">{{if .Clients}}connected ({{.Clients}}){{else}}not connected{{end}}</span></div>
+<div class="row"><span class="lbl">Devices (last 5 min)</span><span class="val">{{.Devices}}</span></div>
+<div class="row"><span class="lbl">Advertisements</span><span class="val">{{.Advertisements}}</span></div>
+<div class="row"><span class="lbl">Controller</span><span class="val" style="font-size:.85em">{{.Controller}}</span></div>
+{{end}}
+</div>
 
 <div class="card">
 <h2>Actions</h2>

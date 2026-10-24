@@ -1,8 +1,9 @@
 # Cross-compile the hub binaries (ARMv7, static).
 GOENV = GOOS=linux GOARCH=arm GOARM=7 CGO_ENABLED=0
-FLAGS = -trimpath -ldflags "-s -w"
+VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+FLAGS = -trimpath -ldflags "-s -w -X main.version=$(VERSION)"
 
-all: build/gatessh build/zbbridge build/ohweb
+all: build/gatessh build/zbbridge build/ohweb build/btproxy
 
 build/%: FORCE
 	$(GOENV) go build $(FLAGS) -o $@ ./cmd/$*

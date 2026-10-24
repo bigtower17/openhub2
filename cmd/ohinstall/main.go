@@ -194,6 +194,8 @@ func main() {
 		log.Println("  3. In Home Assistant: Add integration → ZHA,")
 		log.Println("     radio type EZSP, path socket://<hub-ip>:8888")
 		log.Println("  4. Open http://<hub-ip>/ for the web panel.")
+		log.Println("  5. Home Assistant discovers the Bluetooth proxy as an ESPHome device")
+		log.Println("     (or add ESPHome manually: host <hub-ip>, port 6053, no encryption key).")
 	}
 }
 
@@ -202,6 +204,7 @@ func buildFileList(buildDir, hubDir string) ([]deploy.File, error) {
 		{Local: filepath.Join(buildDir, "gatessh"), Remote: "/data/gatessh/gatessh", Mode: 0o755},
 		{Local: filepath.Join(buildDir, "zbbridge"), Remote: "/data/openhub2/zbbridge", Mode: 0o755},
 		{Local: filepath.Join(buildDir, "ohweb"), Remote: "/data/openhub2/ohweb", Mode: 0o755},
+		{Local: filepath.Join(buildDir, "btproxy"), Remote: "/data/openhub2/btproxy", Mode: 0o755},
 		{Local: filepath.Join(hubDir, "data/openhub2/ohctl"), Remote: "/data/openhub2/ohctl", Mode: 0o755},
 		{Local: filepath.Join(hubDir, "data/openhub2/prepare.sh"), Remote: "/data/openhub2/prepare.sh", Mode: 0o755},
 		{Local: filepath.Join(hubDir, "data/scripts/post_init.sh"), Remote: "/data/scripts/post_init.sh", Mode: 0o755},
@@ -221,11 +224,12 @@ func printManualDeploy() {
 	log.Println("    1. Copy build/gatessh   → /data/gatessh/gatessh")
 	log.Println("    2. Copy build/zbbridge  → /data/openhub2/zbbridge")
 	log.Println("    3. Copy build/ohweb     → /data/openhub2/ohweb")
-	log.Println("    4. Copy hub/data/openhub2/* → /data/openhub2/")
-	log.Println("    5. Copy hub/data/scripts/post_init.sh → /data/scripts/post_init.sh")
-	log.Println("    6. chmod +x all of the above")
-	log.Println("    7. /data/gatessh/gatessh -set-password")
-	log.Println("    8. /data/openhub2/ohctl mode openhub2  (reboots)")
+	log.Println("    4. Copy build/btproxy   → /data/openhub2/btproxy")
+	log.Println("    5. Copy hub/data/openhub2/* → /data/openhub2/")
+	log.Println("    6. Copy hub/data/scripts/post_init.sh → /data/scripts/post_init.sh")
+	log.Println("    7. chmod +x all of the above")
+	log.Println("    8. /data/gatessh/gatessh -set-password")
+	log.Println("    9. /data/openhub2/ohctl mode openhub2  (reboots)")
 }
 
 func printSummary(dr *miio.DiscoverResult, info *miio.Info) {
