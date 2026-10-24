@@ -6,13 +6,18 @@
 OH=/data/openhub2
 MODE=$(cat $OH/mode 2>/dev/null)
 
-# 1. SSH first, so the hub stays reachable even if anything else misbehaves.
-if [ -x /data/gatessh/gatessh ]; then
+# keep NAME CMD...: run CMD forever, restarting 5s after it exits. The binary
+# is checked on every round, so one installed after boot is picked up too.
+keep() {
+    name=$1; shift
     ( while true; do
-        /data/gatessh/gatessh -addr :22 >>/tmp/gatessh.log 2>&1
+        [ -x "$1" ] && "$@" >>/tmp/$name.log 2>&1
         sleep 5
     done ) &
-fi
+}
+
+# 1. SSH first, so the hub stays reachable even if anything else misbehaves.
+keep gatessh /data/gatessh/gatessh -addr :22
 
 # 2. OpenHub2 mode: keep the stock Zigbee stack from starting.
 if [ "$MODE" = "openhub2" ] && [ -x $OH/prepare.sh ]; then
@@ -23,20 +28,12 @@ fi
 /bin/fw_manager.sh -r
 
 # 4. OpenHub2 mode: network Zigbee coordinator on TCP :8888.
-if [ "$MODE" = "openhub2" ] && [ -x $OH/zbbridge ] && [ -f /tmp/openhub2-ready ]; then
-    ( while true; do
-        $OH/zbbridge >>/tmp/zbbridge.log 2>&1
-        sleep 5
-    done ) &
+if [ "$MODE" = "openhub2" ] && [ -f /tmp/openhub2-ready ]; then
+    keep zbbridge $OH/zbbridge
 fi
 
 # 4b. Web panel on port 80 (any mode).
-if [ -x $OH/ohweb ]; then
-    ( while true; do
-        $OH/ohweb >>/tmp/ohweb.log 2>&1
-        sleep 5
-    done ) &
-fi
+keep ohweb $OH/ohweb
 
 # 5. Wi-Fi fallback: without a Xiaomi cloud binding the hub may come up in
 #    setup mode (open AP) instead of joining the saved network. If there is

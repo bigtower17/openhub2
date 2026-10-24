@@ -5,18 +5,20 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"time"
 )
 
-// EZSP frame IDs (v7).
+// EZSP frame IDs.
 const (
-	frameVersion              = 0x00
-	frameNetworkState         = 0x18
-	frameGetEui64             = 0x26
-	frameGetNodeID            = 0x27
-	frameGetNetworkParameters = 0x28
-	frameNeighborCount        = 0x7A
-	frameGetNeighbor          = 0x79
+	frameVersion              = 0x0000
+	frameNetworkInit          = 0x0017
+	frameNetworkState         = 0x0018
+	frameGetEui64             = 0x0026
+	frameGetNodeID            = 0x0027
+	frameGetNetworkParameters = 0x0028
+	frameNeighborCount        = 0x007A
+	frameGetNeighbor          = 0x0079
 )
 
 type NetworkInfo struct {
@@ -31,12 +33,14 @@ type NetworkInfo struct {
 }
 
 type Device struct {
-	EUI64   string `json:"eui64"`
-	ShortID uint16 `json:"short_id"`
-	LQI     uint8  `json:"lqi"`
-	InCost  uint8  `json:"in_cost"`
-	OutCost uint8  `json:"out_cost"`
-	Age     uint8  `json:"age"`
+	EUI64    string `json:"eui64"`
+	ShortID  uint16 `json:"short_id"`
+	LQI      uint8  `json:"lqi"`
+	RSSI     int8   `json:"rssi,omitempty"`
+	InCost   uint8  `json:"in_cost,omitempty"`
+	OutCost  uint8  `json:"out_cost,omitempty"`
+	Age      uint8  `json:"age,omitempty"`
+	LastSeen string `json:"last_seen,omitempty"`
 }
 
 type ScanResult struct {
@@ -54,15 +58,28 @@ func Scan(rw io.ReadWriter) (*ScanResult, error) {
 
 	result := &ScanResult{ScannedAt: time.Now().UTC().Format(time.RFC3339)}
 
-	resp, err := c.Command(frameVersion, 7)
+	ver, vresp, err := negotiateVersion(c)
 	if err != nil {
-		return nil, fmt.Errorf("version: %w", err)
+		return nil, err
 	}
-	if len(resp) >= 4 {
-		result.Network.EZSPVersion = resp[0]
-		stackVer := binary.LittleEndian.Uint16(resp[2:4])
+	result.Network.EZSPVersion = ver
+	if len(vresp) >= 4 {
+		stackVer := binary.LittleEndian.Uint16(vresp[2:4])
 		result.Network.StackVersion = fmt.Sprintf("%d.%d.%d.%d",
 			(stackVer>>12)&0xF, (stackVer>>8)&0xF, (stackVer>>4)&0xF, stackVer&0xF)
+	}
+
+	// Resume the network from NV storage (version command ceases network ops).
+	resp, err := c.Command(frameNetworkInit, 0x00, 0x00)
+	if err == nil && len(resp) >= 1 {
+		if resp[0] == 0x00 {
+			log.Printf("scan: networkInit OK, waiting for stack")
+			time.Sleep(2 * time.Second)
+		} else {
+			log.Printf("scan: networkInit status=0x%02X", resp[0])
+		}
+	} else if err != nil {
+		log.Printf("scan: networkInit: %v", err)
 	}
 
 	resp, err = c.Command(frameGetEui64)
@@ -95,11 +112,9 @@ func Scan(rw io.ReadWriter) (*ScanResult, error) {
 
 	resp, err = c.Command(frameGetNetworkParameters)
 	if err == nil && len(resp) >= 22 {
-		if resp[0] == 0x00 { // EMBER_SUCCESS
-			// resp[1] = nodeType
+		if resp[0] == 0x00 {
 			result.Network.ExtPanID = formatEUI64(resp[2:10])
 			result.Network.PanID = binary.LittleEndian.Uint16(resp[10:12])
-			// resp[12] = txPower
 			result.Network.Channel = resp[13]
 		}
 	}
@@ -128,6 +143,24 @@ func Scan(rw io.ReadWriter) (*ScanResult, error) {
 	}
 
 	return result, nil
+}
+
+func negotiateVersion(c *Conn) (uint8, []byte, error) {
+	c.EzspV8 = false
+	resp, err := c.Command(frameVersion, 7)
+	if err != nil {
+		return 0, nil, fmt.Errorf("version: %w", err)
+	}
+	if len(resp) < 1 {
+		return 0, nil, fmt.Errorf("empty version response")
+	}
+	ver := resp[0]
+	log.Printf("scan: EZSP v%d negotiated", ver)
+	if ver >= 8 {
+		c.EzspV8 = true
+		log.Printf("scan: switching to v8 extended frame format")
+	}
+	return ver, resp, nil
 }
 
 func (r *ScanResult) JSON() []byte {

@@ -15,6 +15,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"os/signal"
 	"sync"
 	"time"
 
@@ -22,7 +23,12 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-const networkFile = "/tmp/zbbridge-network.json"
+const (
+	networkFile = "/tmp/zbbridge-network.json"
+	namesFile   = "/data/openhub2/zbnames.json"
+)
+
+var sniffer = ezsp.NewSniffer()
 
 var (
 	addr     = flag.String("addr", ":8888", "TCP listen address")
@@ -32,6 +38,7 @@ var (
 	resetPin = flag.Int("reset-gpio", 44, "GPIO driving the NCP reset line (active high), -1 to disable")
 	probe    = flag.Bool("probe", false, "send an ASH reset, print the reply and exit")
 	scan     = flag.Bool("scan", false, "scan the NCP for network info and devices, write JSON to "+networkFile+" and exit")
+	sniff    = flag.Bool("sniff", false, "log hex dump of all TCP↔serial traffic")
 )
 
 func main() {
@@ -55,11 +62,14 @@ func main() {
 		return
 	}
 
-	scanNCP()
-
+	// Bind before touching the UART: a second instance must exit here
+	// instead of resetting the NCP under the running one.
 	ln, err := net.Listen("tcp", *addr)
 	if err != nil {
 		log.Fatal(err)
+	}
+	if !*sniff {
+		scanNCP()
 	}
 	log.Printf("listening on %s for %s @ %d", *addr, *port, *baud)
 	// The NCP has a single host: the newest client wins and the previous
@@ -71,6 +81,34 @@ func main() {
 		done    = make(chan struct{})
 	)
 	close(done)
+
+	sniffer.LoadNames(namesFile)
+	go func() {
+		for range time.Tick(5 * time.Second) {
+			if err := sniffer.Flush(networkFile, false); err != nil {
+				log.Printf("sniff: %v", err)
+			}
+			if err := sniffer.SaveNames(namesFile); err != nil {
+				log.Printf("sniff: %v", err)
+			}
+		}
+	}()
+
+	// SIGUSR1: refresh the network file now; scan the NCP only if no host owns it.
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, unix.SIGUSR1)
+	go func() {
+		for range sigCh {
+			mu.Lock()
+			busy := current != nil
+			mu.Unlock()
+			if busy {
+				sniffer.Flush(networkFile, true)
+			} else {
+				scanNCP()
+			}
+		}
+	}()
 	for {
 		c, err := ln.Accept()
 		if err != nil {
@@ -95,6 +133,11 @@ func main() {
 			defer close(finished)
 			<-prev // the serial port is free once the previous session ended
 			serve(c)
+			mu.Lock()
+			if current == c {
+				current = nil
+			}
+			mu.Unlock()
 		}(c, prev, done)
 	}
 }
@@ -109,17 +152,54 @@ func serve(c net.Conn) {
 	}
 	defer ser.Close()
 
+	sniffer.Reset()
+	serLog := &logReader{"ncp→host", sniffer.WrapReader(ser), 500}
+	cliLog := &logReader{"host→ncp", c, 500}
+
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		io.Copy(c, ser) // NCP -> client
+		io.Copy(c, serLog)
 		c.Close()
 	}()
-	io.Copy(ser, c) // client -> NCP
-	ser.Close()     // unblocks the reader goroutine
+	io.Copy(ser, cliLog)
+	ser.Close()
 	wg.Wait()
 	log.Printf("client %s disconnected", c.RemoteAddr())
+}
+
+type logReader struct {
+	tag string
+	r   io.Reader
+	rem int
+}
+
+func (l *logReader) Read(p []byte) (int, error) {
+	n, err := l.r.Read(p)
+	if n > 0 && l.rem > 0 {
+		show := n
+		if show > l.rem {
+			show = l.rem
+		}
+		log.Printf("%s: % x", l.tag, p[:show])
+		l.rem -= show
+	}
+	return n, err
+}
+
+func hexCopy(tag string, dst io.Writer, src io.Reader) {
+	buf := make([]byte, 256)
+	for {
+		n, err := src.Read(buf)
+		if n > 0 {
+			log.Printf("%s: % x", tag, buf[:n])
+			dst.Write(buf[:n])
+		}
+		if err != nil {
+			return
+		}
+	}
 }
 
 // probeNCP sends an ASH RST frame and waits for RSTACK
@@ -215,18 +295,34 @@ func openSerial(path string, baudRate int, hw bool) (*serial, error) {
 	return &serial{fd: fd}, nil
 }
 
+type scanReader struct{ s *serial }
+
+func (r *scanReader) Read(p []byte) (int, error) {
+	n, err := unix.Read(r.s.fd, p)
+	if err == unix.EINTR {
+		return 0, nil
+	}
+	if n < 0 {
+		n = 0
+	}
+	return n, err
+}
+
+func (r *scanReader) Write(p []byte) (int, error) { return r.s.Write(p) }
+
 func scanNCP() {
 	ser, err := openSerial(*port, *baud, *rtscts)
 	if err != nil {
 		log.Printf("scan: open %s: %v", *port, err)
 		return
 	}
-	result, err := ezsp.Scan(ser)
+	result, err := ezsp.Scan(&scanReader{ser})
 	ser.Close()
 	if err != nil {
 		log.Printf("scan: %v", err)
 		return
 	}
+	sniffer.Seed(result.Network)
 	if err := os.WriteFile(networkFile, result.JSON(), 0o644); err != nil {
 		log.Printf("scan: write %s: %v", networkFile, err)
 		return

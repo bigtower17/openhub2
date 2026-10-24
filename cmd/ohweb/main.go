@@ -46,6 +46,7 @@ func main() {
 	http.HandleFunc("/logs", s.auth(s.logs))
 	http.HandleFunc("/mode", s.auth(s.mode))
 	http.HandleFunc("/reboot", s.auth(s.reboot))
+	http.HandleFunc("/rescan", s.auth(s.rescan))
 
 	log.Printf("ohweb listening on %s", *listenAddr)
 	log.Fatal(http.ListenAndServe(*listenAddr, nil))
@@ -155,10 +156,26 @@ type zigbeeNetwork struct {
 }
 
 type zigbeeDevice struct {
-	EUI64   string `json:"eui64"`
-	ShortID uint16 `json:"short_id"`
-	LQI     uint8  `json:"lqi"`
-	Age     uint8  `json:"age"`
+	EUI64    string `json:"eui64"`
+	ShortID  uint16 `json:"short_id"`
+	LQI      uint8  `json:"lqi"`
+	RSSI     int8   `json:"rssi"`
+	LastSeen string `json:"last_seen"`
+}
+
+func (d zigbeeDevice) Seen() string {
+	t, err := time.Parse(time.RFC3339, d.LastSeen)
+	if err != nil {
+		return "—"
+	}
+	s := time.Since(t).Round(time.Second)
+	switch {
+	case s < time.Minute:
+		return fmt.Sprintf("%ds ago", int(s.Seconds()))
+	case s < time.Hour:
+		return fmt.Sprintf("%dm ago", int(s.Minutes()))
+	}
+	return fmt.Sprintf("%dh ago", int(s.Hours()))
 }
 
 type zigbeeInfo struct {
@@ -261,6 +278,16 @@ func (s *server) mode(w http.ResponseWriter, r *http.Request) {
 	s.tmpl.ExecuteTemplate(w, "rebooting", m)
 }
 
+func (s *server) rescan(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+	exec.Command("killall", "-USR1", "zbbridge").Run()
+	time.Sleep(time.Second)
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
 func (s *server) reboot(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
@@ -344,7 +371,13 @@ label{font-size:.9em;color:#52525b;font-weight:500}
 {{if .FwVer}}<div class="row"><span class="lbl">Firmware</span><span class="val">{{.FwVer}}</span></div>{{end}}
 </div>
 
-{{if .Zigbee}}
+{{if not .Zigbee}}
+<div class="card">
+<h2>Zigbee Network</h2>
+<p style="color:#a1a1aa;font-size:.9em;padding:8px 0">No scan data available.</p>
+<form method="POST" action="/rescan"><button style="font-size:.82em;padding:6px 14px">Scan NCP</button></form>
+</div>
+{{else}}
 <div class="card">
 <h2>Zigbee Network</h2>
 <div class="row"><span class="lbl">Status</span>
@@ -354,7 +387,10 @@ label{font-size:.9em;color:#52525b;font-weight:500}
 {{if .Zigbee.Network.ExtPanID}}<div class="row"><span class="lbl">Ext PAN ID</span><span class="val" style="font-size:.85em">{{.Zigbee.Network.ExtPanID}}</span></div>{{end}}
 {{if .Zigbee.Network.EUI64}}<div class="row"><span class="lbl">Coordinator</span><span class="val" style="font-size:.85em">{{.Zigbee.Network.EUI64}}</span></div>{{end}}
 <div class="row"><span class="lbl">EZSP / Stack</span><span class="val">v{{.Zigbee.Network.EZSPVersion}} / {{.Zigbee.Network.StackVersion}}</span></div>
-{{if .Zigbee.ScannedAt}}<div class="row"><span class="lbl">Scanned</span><span class="val" style="font-size:.85em">{{.Zigbee.ScannedAt}}</span></div>{{end}}
+{{if .Zigbee.ScannedAt}}<div class="row"><span class="lbl">Updated</span><span class="val" style="font-size:.85em">{{.Zigbee.ScannedAt}}</span></div>{{end}}
+<div style="margin-top:8px">
+<form method="POST" action="/rescan"><button style="font-size:.82em;padding:6px 14px">Refresh</button></form>
+</div>
 </div>
 
 {{if .Zigbee.Devices}}
@@ -365,14 +401,18 @@ label{font-size:.9em;color:#52525b;font-weight:500}
   <th style="padding:6px 4px;color:#71717a;font-weight:600;font-size:.82em">IEEE ADDRESS</th>
   <th style="padding:6px 4px;color:#71717a;font-weight:600;font-size:.82em">NWK</th>
   <th style="padding:6px 4px;color:#71717a;font-weight:600;font-size:.82em">LQI</th>
+  <th style="padding:6px 4px;color:#71717a;font-weight:600;font-size:.82em">RSSI</th>
+  <th style="padding:6px 4px;color:#71717a;font-weight:600;font-size:.82em">SEEN</th>
 </tr>
 {{range .Zigbee.Devices}}
 <tr style="border-bottom:1px solid #f4f4f5">
-  <td style="padding:6px 4px;font-family:monospace;font-size:.9em">{{.EUI64}}</td>
+  <td style="padding:6px 4px;font-family:monospace;font-size:.9em">{{if .EUI64}}{{.EUI64}}{{else}}<span class="off">unknown</span>{{end}}</td>
   <td style="padding:6px 4px">0x{{printf "%04X" .ShortID}}</td>
   <td style="padding:6px 4px">
     <span class="{{if ge .LQI 170}}ok{{else if ge .LQI 85}}warn{{else}}off{{end}}">{{.LQI}}</span>
   </td>
+  <td style="padding:6px 4px">{{if .RSSI}}{{.RSSI}} dBm{{else}}—{{end}}</td>
+  <td style="padding:6px 4px;font-size:.9em">{{.Seen}}</td>
 </tr>
 {{end}}
 </table>
