@@ -52,13 +52,40 @@ func main() {
 		log.Fatal(err)
 	}
 	log.Printf("listening on %s for %s @ %d", *addr, *port, *baud)
+	// The NCP has a single host: the newest client wins and the previous
+	// one is disconnected (a crashed or restarted host must not lock the
+	// radio forever).
+	var (
+		mu      sync.Mutex
+		current net.Conn
+		done    = make(chan struct{})
+	)
+	close(done)
 	for {
 		c, err := ln.Accept()
 		if err != nil {
 			log.Printf("accept: %v", err)
 			continue
 		}
-		serve(c) // one client at a time: the NCP has a single host
+		if tc, ok := c.(*net.TCPConn); ok {
+			tc.SetKeepAlive(true)
+			tc.SetKeepAlivePeriod(30 * time.Second)
+		}
+		mu.Lock()
+		if current != nil {
+			log.Printf("new client %s replaces %s", c.RemoteAddr(), current.RemoteAddr())
+			current.Close()
+		}
+		current = c
+		prev := done
+		done = make(chan struct{})
+		mu.Unlock()
+
+		go func(c net.Conn, prev <-chan struct{}, finished chan<- struct{}) {
+			defer close(finished)
+			<-prev // the serial port is free once the previous session ended
+			serve(c)
+		}(c, prev, done)
 	}
 }
 
