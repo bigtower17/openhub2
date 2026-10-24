@@ -41,4 +41,10 @@ fi
       echo "$(date) no IP after boot, rejoining saved Wi-Fi" >> $OH/wifi-fallback.log
       /bin/wifi_start.sh INIT >/dev/null 2>&1
       /bin/wifi_start.sh STA >/dev/null 2>&1
+      sleep 30
+  fi
+  # 6. Clock: without the Xiaomi cloud nothing sets the time; keep it in
+  #    sync with NTP (BusyBox ntpd daemonizes).
+  if ! pidof ntpd >/dev/null; then
+      ntpd -p pool.ntp.org -p time.google.com -p time.cloudflare.com
   fi ) &
