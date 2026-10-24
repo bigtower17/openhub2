@@ -1,0 +1,33 @@
+#!/bin/sh
+# ohled COLOR [blink]: drive the hub's RGB LED (PWM channels 1 red, 2 green,
+# 3 blue, 200 us period, as the stock firmware does).
+P=/sys/class/pwm/pwmchip0
+PIDFILE=/var/run/ohled.pid
+
+set_ch() {
+	[ -d $P/pwm$1 ] || echo $1 > $P/export
+	echo 200000 > $P/pwm$1/period
+	echo $2 > $P/pwm$1/duty_cycle
+	echo 1 > $P/pwm$1/enable
+}
+rgb() { set_ch 1 $1; set_ch 2 $2; set_ch 3 $3; }
+
+case "$1" in
+off)    c="0 0 0" ;;
+red)    c="100000 0 0" ;;
+green)  c="0 100000 0" ;;
+blue)   c="0 0 100000" ;;
+cyan)   c="0 70000 100000" ;;
+purple) c="100000 0 100000" ;;
+orange) c="100000 30000 0" ;;
+white)  c="100000 100000 100000" ;;
+*) echo "usage: ohled off|red|green|blue|cyan|purple|orange|white [blink]" >&2; exit 1 ;;
+esac
+
+[ -f $PIDFILE ] && kill "$(cat $PIDFILE)" 2>/dev/null && rm -f $PIDFILE
+if [ "$2" = "blink" ]; then
+	( while true; do rgb $c; sleep 1; rgb 0 0 0; sleep 1; done ) &
+	echo $! > $PIDFILE
+else
+	rgb $c
+fi
