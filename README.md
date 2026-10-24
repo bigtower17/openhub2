@@ -15,8 +15,9 @@ Xiaomi/Aqara, and it keeps working without the Xiaomi cloud.
 - **Network Zigbee coordinator** (`zbbridge`): exposes the hub's Silicon Labs
   EFR32 radio on TCP `:8888`. Point ZHA (or anything built on zigpy/bellows)
   at `socket://<hub-ip>:8888`.
-  - Tested: a Tuya `TS004F` button paired through the hub, and its
-    single/double/long press events were received.
+  - Tested with Home Assistant 2026.10.3 (ZHA, bellows 1.1.0): a Tuya
+    `TS004F` button paired through the hub, got its ZHA quirk applied and
+    fired `zha_event`s for single/double/long presses.
 - **Mode switch** (`ohctl`): `openhub2` hands the radio to `zbbridge`, while
   `xiaomi` keeps the stock Mi Home Zigbee. Wi-Fi, Bluetooth and the rest of
   the stock services keep running in both modes.
@@ -64,6 +65,13 @@ opens it for you: it only needs the device token from the Xiaomi cloud.
 A one-step installer is planned.
 
 ## Caveats
+
+- **Pairing through ZHA can need a second try.** In testing, the first ZHA
+  pairing attempts got no join request at the radio, while the same button
+  joined immediately through plain zigpy/bellows on the same network. Once
+  it had joined, ZHA picked it up on the next reset. Root cause still
+  unknown: if a device does not show up, reset it again with the pairing
+  window open.
 
 - **Zigbee devices do not migrate.** In `openhub2` mode the Mi Home Zigbee
   devices stop working and must be paired again in ZHA. Bluetooth and Mesh
