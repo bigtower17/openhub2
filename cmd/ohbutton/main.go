@@ -72,10 +72,12 @@ func switchToStock() {
 	run("reboot")
 }
 
+// run does not capture output: ohled leaves a blinking loop in the
+// background, which would hold a pipe open and block forever.
 func run(name string, args ...string) error {
-	out, err := exec.Command(name, args...).CombinedOutput()
+	err := exec.Command(name, args...).Run()
 	if err != nil {
-		log.Printf("%s: %v %s", name, err, out)
+		log.Printf("%s: %v", name, err)
 	}
 	return err
 }
