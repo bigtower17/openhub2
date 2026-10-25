@@ -13,8 +13,8 @@ unless stated otherwise.
 | Storage | raw NAND, 128 MB |
 | Kernel | Linux 4.9.84, uImage, LZMA |
 | Userland | BusyBox 1.20.2, squashfs (xz) root, read-only |
-| Wi-Fi | SigmaStar `SSW105AT`, out-of-tree module `ssw105at.ko` |
-| Bluetooth | `hci_uart` |
+| Wi-Fi | SigmaStar `SSW105AT` (USB, dual band), out-of-tree module `ssw105at.ko` |
+| Bluetooth | Telink BLE 5.0 controller (HCI 9, manufacturer `0x0211`), HCI over Three-wire UART (H5) on `/dev/ttyS2` |
 | Zigbee | Silicon Labs EFR32MG NCP on `/dev/ttyS1` |
 | Audio | SigmaStar MI `mi_ao` / `mi_ai` (proprietary `mhal`, `mi_sys`) |
 | Other | Ethernet, `/dev/fb0`, LED |
@@ -72,6 +72,36 @@ fi
 
 `/data/scripts/post_init.sh` **replaces** `fw_manager.sh -r`, which starts all
 stock services. A custom hook must call `/bin/fw_manager.sh -r` itself.
+
+## Peripherals
+
+| | |
+|---|---|
+| Bluetooth | `/dev/ttyS2`, **1 000 000 baud, 8N1, no flow control**, H5 with SLIP framing, no data integrity check (config `03 fc <window>`). Reset by **GPIO 60** (1 → 0 → 1, runs at 1). The stock `miio_bt` (Zephyr host) opens it with `TIOCEXCL` and can reflash the Telink firmware (`telink_device_firmware_update`). |
+| Zigbee | EFR32 NCP on `/dev/ttyS1`, 115200, RTS/CTS; reset by GPIO 44 (active high). |
+| LED | RGB on `pwmchip0`: pwm1 red, pwm2 green, pwm3 blue, period 200 000 ns, duty = brightness. |
+| Button | input device `main-key` (`lumi_gpio_key`, GPIO 42) on `/dev/input/event0`, key code 102 (`KEY_HOME`). |
+| Watchdog | `/dev/watchdog`, fed by the stock `watchdog_30S`; reboots when no longer fed. |
+| Wi-Fi MAC | the chip reports its own MAC; the stock firmware sets the factory one from `persist.sys.wlan_mac` with `ifconfig wlan0 hw ether`. |
+| Ethernet | `eth0`, physical RJ45 port. |
+| Audio | SigmaStar MI audio (`mi_ao`/`mi_ai`); `mi_sys` needs `/config/config_tool` (glibc) through a usermode helper. `mha_basis` holds `/dev/mi_ao`. |
+
+## U-Boot
+
+U-Boot 2015.01 (built 2022-09-22), simple command parser (no hush: no
+`if`/`then`), with `run`, `setenv`, `saveenv`, `test`, TFTP/DHCP, USB/SD
+and SigmaStar `estar`/`ustar`/`sdstar` flashing. `bootdelay=0`, console on
+the serial port at 115200. `bootm` only checks the uImage checksum. The
+image is an xz-compressed uImage at offset `0xc0000` of BOOT0.
+
+When the environment is unreadable U-Boot falls back to its built-in
+default, which boots **slot A** (`KERNEL` + `mtdblock7`).
+
+The environment can be changed from Linux with `/etc/fw_setenv`
+(`/etc/fw_env.config`: `mtd2`/`mtd3`, size `0x1000`, redundant). The
+stock updater (`/bin/fw_update.sh`) writes the inactive slot with
+`flash_erase` + `nandwrite` and flips `bootcmd`/`bootargs` with it; there is
+no signature check in the script.
 
 ## Zigbee stack
 
