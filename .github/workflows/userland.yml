@@ -61,7 +61,7 @@ jobs:
           sha256sum out/images/rootfs.squashfs > out/images/rootfs.squashfs.sha256
 
       - name: Collect licenses and sources (legal-info)
-        if: startsWith(github.ref, 'refs/tags/')
+        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
         run: |
           make -C out legal-info
           tar -C out -czf out/images/openhub2-userland-legal-info.tar.gz legal-info
