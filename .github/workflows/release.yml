@@ -1,0 +1,65 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  binaries:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Build hub binaries and installer
+        run: |
+          V="${GITHUB_REF_NAME}"
+          FLAGS="-s -w -X main.version=$V"
+          mkdir -p dist pkg/data/openhub2 pkg/data/gatessh pkg/data/scripts
+          for c in zbbridge btproxy ohweb; do
+            GOOS=linux GOARCH=arm GOARM=7 CGO_ENABLED=0 go build -trimpath -ldflags "$FLAGS" -o pkg/data/openhub2/$c ./cmd/$c
+          done
+          GOOS=linux GOARCH=arm GOARM=7 CGO_ENABLED=0 go build -trimpath -ldflags "$FLAGS" -o pkg/data/gatessh/gatessh ./cmd/gatessh
+          cp hub/data/openhub2/* pkg/data/openhub2/
+          cp hub/data/scripts/post_init.sh pkg/data/scripts/
+          chmod 755 pkg/data/openhub2/* pkg/data/gatessh/gatessh pkg/data/scripts/post_init.sh
+          tar -C pkg -czf "dist/openhub2-hub-armv7-$V.tar.gz" data
+          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags "$FLAGS" -o "dist/ohinstall-$V-windows-amd64.exe" ./cmd/ohinstall
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "$FLAGS" -o "dist/ohinstall-$V-linux-amd64" ./cmd/ohinstall
+          CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags "$FLAGS" -o "dist/ohinstall-$V-macos-arm64" ./cmd/ohinstall
+      - uses: actions/upload-artifact@v4
+        with:
+          name: binaries
+          path: dist/*
+
+  rootfs:
+    uses: ./.github/workflows/userland.yml
+
+  publish:
+    needs: [binaries, rootfs]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: art
+      - name: Assemble release files
+        run: |
+          V="${GITHUB_REF_NAME}"
+          mkdir -p release
+          cp art/binaries/* release/
+          cp art/openhub2-rootfs/rootfs.squashfs "release/openhub2-userland-$V.squashfs"
+          cp art/openhub2-rootfs/openhub2-userland-legal-info.tar.gz "release/openhub2-userland-legal-info-$V.tar.gz"
+          (cd release && sha256sum * > SHA256SUMS)
+          cat release/SHA256SUMS
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" release/* --prerelease --title "OpenHub2 $GITHUB_REF_NAME" --notes-file .github/release-notes.md

@@ -2,11 +2,13 @@ name: userland
 
 on:
   push:
+    branches: ["**"]
     paths:
       - "userland/**"
       - "cmd/ohbutton/**"
       - ".github/workflows/userland.yml"
   workflow_dispatch:
+  workflow_call:
 
 env:
   BUILDROOT_VERSION: "2026.02.3"
@@ -57,9 +59,17 @@ jobs:
           test "$size" -le 16777216
           sha256sum out/images/rootfs.squashfs > out/images/rootfs.squashfs.sha256
 
+      - name: Collect licenses and sources (legal-info)
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          make -C out legal-info
+          tar -C out -czf out/images/openhub2-userland-legal-info.tar.gz legal-info
+
       - uses: actions/upload-artifact@v4
         with:
           name: openhub2-rootfs
           path: |
             out/images/rootfs.squashfs
             out/images/rootfs.squashfs.sha256
+            out/images/openhub2-userland-legal-info.tar.gz
+          if-no-files-found: ignore
