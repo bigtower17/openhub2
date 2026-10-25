@@ -19,7 +19,7 @@ start)
 				fw_setenv oh_next run oh_try && echo "$(date) boot ok, re-armed" >>$LOG
 			fi
 			touch /tmp/openhub2-bootok
-			ohled green
+			ohled "$(cat /data/openhub2/led 2>/dev/null || echo green)" || ohled green
 			exit 0
 		fi
 		sleep 2; i=$((i + 2))

@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -50,6 +51,7 @@ func main() {
 	http.HandleFunc("/rescan", s.auth(s.rescan))
 	http.HandleFunc("/system", s.auth(s.system))
 	http.HandleFunc("/bluetooth", s.auth(s.bluetooth))
+	http.HandleFunc("/led", s.auth(s.led))
 
 	log.Printf("ohweb listening on %s", *listenAddr)
 	log.Fatal(http.ListenAndServe(*listenAddr, nil))
@@ -90,6 +92,8 @@ type statusData struct {
 	CPU         string
 	Memory      string
 	CPUFreq     string
+	LED         string   // configured LED color (userland only)
+	LEDColors   []string
 }
 
 func getStatus() statusData {
@@ -182,6 +186,9 @@ func getSystem(st *statusData) {
 			}
 		}
 	}
+	if st.Userland {
+		st.LED, st.LEDColors = ledColor(), ledColors
+	}
 	st.CPU = cpuUsage()
 	if b, err := os.ReadFile("/proc/meminfo"); err == nil {
 		var total, avail int
@@ -198,6 +205,18 @@ func getSystem(st *statusData) {
 		fmt.Sscanf(string(b), "%d", &khz)
 		st.CPUFreq = fmt.Sprintf("%d MHz", khz/1000)
 	}
+}
+
+// LED colors understood by ohled (userland image).
+var ledColors = []string{"green", "blue", "cyan", "purple", "orange", "white", "red", "off"}
+
+func ledColor() string {
+	if b, err := os.ReadFile(dataDir + "/led"); err == nil {
+		if c := strings.TrimSpace(string(b)); slices.Contains(ledColors, c) {
+			return c
+		}
+	}
+	return "green"
 }
 
 // cpuUsage samples /proc/stat over 200 ms.
@@ -461,6 +480,24 @@ func (s *server) bluetooth(w http.ResponseWriter, r *http.Request) {
 	s.tmpl.ExecuteTemplate(w, "bluetooth", data)
 }
 
+// led sets the LED color now and saves it for the next healthy boot.
+func (s *server) led(w http.ResponseWriter, r *http.Request) {
+	c := r.FormValue("color")
+	if r.Method != "POST" || !slices.Contains(ledColors, c) {
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+	if err := os.WriteFile(dataDir+"/led", []byte(c+"\n"), 0o644); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if err := exec.Command("ohled", c).Run(); err != nil {
+		http.Error(w, fmt.Sprintf("ohled: %v", err), http.StatusInternalServerError)
+		return
+	}
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
 func (s *server) reboot(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
@@ -616,6 +653,16 @@ label{font-size:.9em;color:#52525b;font-weight:500}
 <div class="row"><span class="lbl">Controller</span><span class="val" style="font-size:.85em">{{.Controller}}</span></div>
 {{end}}
 </div>
+
+{{if .LEDColors}}
+<div class="card">
+<h2>LED</h2>
+<form method="POST" action="/led" class="act">
+{{range .LEDColors}}<button name="color" value="{{.}}" style="font-size:.82em;padding:6px 12px;{{if eq . $.LED}}outline:2px solid #2563eb;outline-offset:2px;{{end}}{{if eq . "off"}}background:#a1a1aa{{else if eq . "white"}}background:#e4e4e7;color:#18181b{{else if eq . "cyan"}}background:#06b6d4{{else}}background:{{.}}{{end}}">{{.}}</button>{{end}}
+</form>
+<p style="margin-top:8px;font-size:.8em;color:#a1a1aa">Shown once the hub is up. Purple blinking means booting, red a failed boot, orange the switch to stock.</p>
+</div>
+{{end}}
 
 <div class="card">
 <h2>Actions</h2>
