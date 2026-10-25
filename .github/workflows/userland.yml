@@ -17,6 +17,8 @@ jobs:
   rootfs:
     runs-on: ubuntu-24.04
     timeout-minutes: 180
+    env:
+      BR2_DL_DIR: ${{ github.workspace }}/dl
     steps:
       - uses: actions/checkout@v4
 
@@ -44,7 +46,6 @@ jobs:
 
       - name: Build root filesystem
         env:
-          BR2_DL_DIR: ${{ github.workspace }}/dl
           OPENHUB2_VERSION: ${{ github.sha }}
           OPENHUB2_BIN_DIR: ${{ github.workspace }}/hostbin
         run: |
