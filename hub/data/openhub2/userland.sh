@@ -92,7 +92,9 @@ enable() {
 	case "$args" in *mtdblock8*) ;; *) die "unexpected bootargs: $args" ;; esac
 	[ -n "$boot" ] || die "no bootcmd"
 	$SETENV stock_args "$args"
-	$SETENV oh_args "$(echo "$args" | sed 's#root=/dev/mtdblock8#root=/dev/mtdblock7#') oh=userland"
+	# panic=5: a kernel panic reboots (and so falls back to stock) instead of
+	# hanging before the watchdog is armed.
+	$SETENV oh_args "$(echo "$args" | sed -e 's#root=/dev/mtdblock8#root=/dev/mtdblock7#' -e 's#init=/linuxrc#init=/sbin/init#') panic=5 oh=userland"
 	$SETENV boot_kernel "$boot"
 	$SETENV oh_stock 'setenv bootargs ${stock_args}; run boot_kernel'
 	$SETENV oh_try 'setenv oh_next run oh_stock; saveenv; setenv bootargs ${oh_args}; run boot_kernel'
