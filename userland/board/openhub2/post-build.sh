@@ -14,3 +14,9 @@ VERSION_ID=${OPENHUB2_VERSION:-dev}
 PRETTY_NAME="OpenHub2 ${OPENHUB2_VERSION:-dev}"
 EOF
 chmod 755 "$T"/etc/init.d/S*
+# Go helpers built by the workflow (OPENHUB2_BIN_DIR).
+if [ -n "$OPENHUB2_BIN_DIR" ]; then
+	install -m 755 "$OPENHUB2_BIN_DIR/ohbutton" "$T/usr/sbin/ohbutton"
+else
+	echo "post-build: OPENHUB2_BIN_DIR not set, ohbutton not installed" >&2
+fi

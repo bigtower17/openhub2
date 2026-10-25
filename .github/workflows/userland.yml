@@ -4,6 +4,7 @@ on:
   push:
     paths:
       - "userland/**"
+      - "cmd/ohbutton/**"
       - ".github/workflows/userland.yml"
   workflow_dispatch:
 
@@ -27,6 +28,15 @@ jobs:
           key: br-dl-${{ env.BUILDROOT_VERSION }}-${{ hashFiles('userland/configs/*') }}
           restore-keys: br-dl-${{ env.BUILDROOT_VERSION }}-
 
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build Go helpers
+        run: |
+          mkdir -p hostbin
+          GOOS=linux GOARCH=arm GOARM=7 CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o hostbin/ohbutton ./cmd/ohbutton
+
       - name: Fetch Buildroot
         run: git clone --depth 1 --branch "$BUILDROOT_VERSION" https://gitlab.com/buildroot.org/buildroot.git buildroot
 
@@ -34,6 +44,7 @@ jobs:
         env:
           BR2_DL_DIR: ${{ github.workspace }}/dl
           OPENHUB2_VERSION: ${{ github.sha }}
+          OPENHUB2_BIN_DIR: ${{ github.workspace }}/hostbin
         run: |
           chmod +x userland/board/openhub2/post-build.sh
           make -C buildroot BR2_EXTERNAL="$PWD/userland" O="$PWD/out" openhub2_defconfig

@@ -1,0 +1,11 @@
+#!/bin/sh
+# Three quick presses of the physical button: next boot is stock, reboot.
+case "$1" in
+start)
+	( while true; do
+		/usr/sbin/ohbutton >>/tmp/ohbutton.log 2>&1
+		sleep 2
+	done ) &
+	;;
+stop) ;;
+esac

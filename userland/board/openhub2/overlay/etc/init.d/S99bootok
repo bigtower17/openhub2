@@ -11,7 +11,9 @@ start)
 	( i=0
 	while [ $i -lt 180 ]; do
 		if healthy; then
-			if [ -f /data/openhub2/userland.disabled ]; then
+			if [ -f /tmp/openhub2-switch-stock ]; then
+				exit 0 # the button asked for stock: leave the chain disarmed
+			elif [ -f /data/openhub2/userland.disabled ]; then
 				fw_setenv oh_next run oh_stock && echo "$(date) userland disabled, next boot is stock" >>$LOG
 			else
 				fw_setenv oh_next run oh_try && echo "$(date) boot ok, re-armed" >>$LOG
