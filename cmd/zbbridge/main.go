@@ -8,6 +8,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -24,6 +25,7 @@ import (
 )
 
 const (
+	clientFile  = "/tmp/zbbridge-client.json"
 	networkFile = "/tmp/zbbridge-network.json"
 	namesFile   = "/data/openhub2/zbnames.json"
 )
@@ -152,6 +154,8 @@ func serve(c net.Conn) {
 	}
 	defer ser.Close()
 
+	writeClient(c.RemoteAddr().String())
+	defer os.Remove(clientFile)
 	sniffer.Reset()
 	serLog := &logReader{"ncp→host", sniffer.WrapReader(ser), 500}
 	cliLog := &logReader{"host→ncp", c, 500}
@@ -167,6 +171,14 @@ func serve(c net.Conn) {
 	ser.Close()
 	wg.Wait()
 	log.Printf("client %s disconnected", c.RemoteAddr())
+}
+
+// writeClient records the connected host (ZHA) for the web panel.
+func writeClient(addr string) {
+	b, _ := json.Marshal(map[string]string{"client": addr, "since": time.Now().UTC().Format(time.RFC3339)})
+	if err := os.WriteFile(clientFile, b, 0o644); err != nil {
+		log.Printf("client file: %v", err)
+	}
 }
 
 type logReader struct {

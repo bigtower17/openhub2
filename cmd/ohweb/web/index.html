@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>OpenHub2</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <div class="logo">Open<span>Hub2</span></div>
+  <div class="host" id="host"></div>
+  <span class="badge" id="sysbadge">…</span>
+  <div class="spacer"></div>
+  <span class="sub" id="updated"></span>
+  <span class="live" id="live" title="live updates"></span>
+</header>
+<nav id="tabs">
+  <a href="#overview" data-tab="overview">Overview</a>
+  <a href="#zigbee" data-tab="zigbee">Zigbee</a>
+  <a href="#bluetooth" data-tab="bluetooth">Bluetooth</a>
+  <a href="#network" data-tab="network">Network</a>
+  <a href="#system" data-tab="system">System</a>
+  <a href="#logs" data-tab="logs">Logs</a>
+</nav>
+<main>
+  <section id="overview">
+    <div class="grid" id="tiles"></div>
+    <div class="card" style="margin-top:14px">
+      <h3>Resources <span class="right seg" id="range">
+        <button data-r="1h" class="on">1h</button><button data-r="6h">6h</button><button data-r="24h">24h</button></span></h3>
+      <div class="grid two">
+        <div><div class="sub">CPU %</div><svg class="chart" id="ch-cpu"></svg></div>
+        <div><div class="sub">Memory MB</div><svg class="chart" id="ch-mem"></svg></div>
+        <div><div class="sub">Network</div><svg class="chart" id="ch-net"></svg>
+          <div class="legend"><span><i style="background:var(--c1)"></i>in</span><span><i style="background:var(--c3)"></i>out</span></div></div>
+        <div><div class="sub">BLE advertisements / min</div><svg class="chart" id="ch-ble"></svg></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="zigbee">
+    <div class="grid two">
+      <div class="card"><h3>Zigbee network <span class="right"><button id="zb-refresh">Refresh</button></span></h3><div class="rows" id="zb-net"></div></div>
+      <div class="card"><h3>Home Assistant (ZHA)</h3><div id="zb-ha"></div></div>
+    </div>
+    <div class="card" style="margin-top:14px"><h3>Devices <span class="right sub" id="zb-count"></span></h3><div id="zb-devices"></div>
+      <p class="note">Devices appear when they send traffic. IEEE addresses are learned from announces and ZHA queries.</p></div>
+  </section>
+
+  <section id="bluetooth">
+    <div class="grid two">
+      <div class="card"><h3>Bluetooth proxy</h3><div class="rows" id="bt-info"></div></div>
+      <div class="card"><h3>Home Assistant</h3><div id="bt-ha"></div></div>
+    </div>
+    <div class="card" style="margin-top:14px"><h3>Devices heard (10 min) <span class="right"><input id="bt-filter" placeholder="Filter" style="width:160px;padding:4px 8px"></span></h3><div id="bt-devices"></div></div>
+  </section>
+
+  <section id="network">
+    <div class="grid two">
+      <div class="card"><h3>Connection</h3><div class="rows" id="net-info"></div></div>
+      <div class="card"><h3>Wi-Fi</h3>
+        <button id="wifi-scan">Scan networks</button>
+        <div class="wifi-list" id="wifi-list"></div>
+        <form id="wifi-form">
+          <label for="ssid">Network (SSID)</label><input id="ssid" name="ssid" required autocomplete="off">
+          <label for="password">Password</label><input id="password" name="password" type="password" autocomplete="off">
+          <div class="actions"><button class="primary">Connect</button></div>
+          <p class="note">The hub reconnects with the new settings. If it moves to another network, find it there.</p>
+        </form>
+      </div>
+    </div>
+  </section>
+
+  <section id="system">
+    <div class="grid two">
+      <div class="card"><h3>System</h3><div class="rows" id="sys-info"></div><div class="actions" id="sys-actions"></div></div>
+      <div class="card" id="led-card" hidden><h3>LED</h3><div class="swatches" id="led"></div>
+        <p class="note">Shown once the hub is up. Purple blinking means booting, red a failed boot, orange the switch to stock.</p></div>
+      <div class="card"><h3>Power</h3><p class="sub">Restart the hub. Zigbee and Bluetooth are offline for about a minute (three on stock).</p>
+        <div class="actions"><button class="danger" id="reboot">Reboot</button></div></div>
+    </div>
+  </section>
+
+  <section id="logs">
+    <div class="card"><h3>Logs <span class="right"><select id="log-name" style="width:auto"></select> <button id="log-refresh">Refresh</button></span></h3><pre id="log"></pre></div>
+  </section>
+</main>
+<div class="toast" id="toast"></div>
+<div class="overlay" id="overlay"><div><div class="big">Rebooting…</div><div class="sub" id="overlay-msg">Waiting for the hub to come back.</div></div></div>
+<script src="app.js"></script>
+</body>
+</html>
