@@ -31,6 +31,8 @@ prepare() {
 		cp /lib/modules/4.9.84/$m.ko $STOCK/modules/
 	done
 	cp /etc/ssw105at-wifi.cfg $STOCK/
+	# The Wi-Fi chip's own MAC differs: stock sets the factory one at boot.
+	agetprop persist.sys.wlan_mac > $STOCK/wlan_mac
 	ssid=$(agetprop persist.app.wifi_ssid)
 	pass=$(agetprop persist.app.wifi_passphrase)
 	[ -n "$ssid" ] || die "no Wi-Fi SSID stored (persist.app.wifi_ssid)"
@@ -49,7 +51,7 @@ prepare() {
 		echo "}"
 	} > $OH/wpa_supplicant.conf
 	sync
-	echo "prepared: $(ls $STOCK/modules | wc -l) modules, wpa_supplicant.conf for \"$ssid\""
+	echo "prepared: $(ls $STOCK/modules | wc -l) modules, MAC $(cat $STOCK/wlan_mac), wpa_supplicant.conf for \"$ssid\""
 }
 
 write_mtd() { # write_mtd FILE MTDNUM: erase, write, read back and compare

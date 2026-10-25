@@ -4,6 +4,8 @@ case "$1" in
 start)
 	for i in 1 2 3 4 5 6 7 8 9 10; do [ -e /sys/class/net/wlan0 ] && break; sleep 1; done
 	ifconfig lo up
+	# factory MAC, saved from the stock persist.sys.wlan_mac
+	[ -s /data/openhub2/stock/wlan_mac ] && ifconfig wlan0 hw ether "$(cat /data/openhub2/stock/wlan_mac)"
 	ifconfig wlan0 up
 	mkdir -p /var/run/wpa_supplicant
 	if [ -f $CONF ]; then
