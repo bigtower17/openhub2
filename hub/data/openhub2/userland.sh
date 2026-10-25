@@ -81,6 +81,7 @@ flash() {
 		write_mtd $k 5
 	fi
 	rm -f $k
+	sha256sum "$f" | cut -d' ' -f1 > $OH/userland.flashed
 	sync
 	echo "flashed"
 }

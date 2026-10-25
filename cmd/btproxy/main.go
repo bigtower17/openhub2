@@ -6,7 +6,6 @@
 package main
 
 import (
-	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
@@ -125,7 +124,7 @@ func main() {
 	}()
 	log.Printf("ESPHome API on %s as %s", *addr, srv.Info.Name)
 
-	st := &stats{seen: map[[6]byte]time.Time{}}
+	st := &stats{seen: map[[6]byte]*device{}}
 	go st.report(srv, btMAC, ver)
 
 	flush := time.NewTicker(100 * time.Millisecond)
@@ -134,7 +133,7 @@ func main() {
 	for {
 		select {
 		case a := <-ctrl.Adverts:
-			st.add(a.Address)
+			st.add(a)
 			batch = append(batch, esphome.Advertisement{Address: a.Address, AddressType: a.AddressType, RSSI: a.RSSI, Data: a.Data})
 		case <-flush.C:
 			if len(batch) > 0 {
@@ -166,48 +165,6 @@ func runProbe(ctrl *hci.Controller, d time.Duration) {
 				fmt.Printf("  %s %d dBm\n", formatMAC(a[:]), rssi)
 			}
 			return
-		}
-	}
-}
-
-type stats struct {
-	mu    sync.Mutex
-	count int
-	seen  map[[6]byte]time.Time
-}
-
-func (s *stats) add(a [6]byte) {
-	s.mu.Lock()
-	s.count++
-	s.seen[a] = time.Now()
-	s.mu.Unlock()
-}
-
-// report writes a status file for the web panel every 10 seconds.
-func (s *stats) report(srv *esphome.Server, btMAC string, ver hci.Version) {
-	start := time.Now()
-	for range time.Tick(10 * time.Second) {
-		s.mu.Lock()
-		cutoff := time.Now().Add(-5 * time.Minute)
-		for a, t := range s.seen {
-			if t.Before(cutoff) {
-				delete(s.seen, a)
-			}
-		}
-		st := map[string]any{
-			"bluetooth_mac":  btMAC,
-			"controller":     fmt.Sprintf("HCI %d rev 0x%04x, manufacturer 0x%04x", ver.HCIVersion, ver.HCIRevision, ver.Manufacturer),
-			"name":           srv.Info.Name,
-			"clients":        srv.Clients(),
-			"advertisements": s.count,
-			"devices_5min":   len(s.seen),
-			"uptime_seconds": int(time.Since(start).Seconds()),
-			"updated_at":     time.Now().UTC().Format(time.RFC3339),
-		}
-		s.mu.Unlock()
-		b, _ := json.MarshalIndent(st, "", "  ")
-		if err := os.WriteFile(statusFile, b, 0o644); err != nil {
-			log.Printf("status: %v", err)
 		}
 	}
 }

@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"sort"
 	"strings"
 	"time"
 
@@ -47,6 +48,8 @@ func main() {
 	http.HandleFunc("/mode", s.auth(s.mode))
 	http.HandleFunc("/reboot", s.auth(s.reboot))
 	http.HandleFunc("/rescan", s.auth(s.rescan))
+	http.HandleFunc("/system", s.auth(s.system))
+	http.HandleFunc("/bluetooth", s.auth(s.bluetooth))
 
 	log.Printf("ohweb listening on %s", *listenAddr)
 	log.Fatal(http.ListenAndServe(*listenAddr, nil))
@@ -79,6 +82,14 @@ type statusData struct {
 	Zigbee      *zigbeeInfo
 	BTProxy     string
 	BT          *btInfo
+
+	Userland    bool   // running the OpenHub2 userland (slot A)
+	NextBoot    string // "OpenHub2" or "stock"
+	CanUserland bool   // slot A holds a flashed userland image
+	Image       string
+	CPU         string
+	Memory      string
+	CPUFreq     string
 }
 
 func getStatus() statusData {
@@ -142,7 +153,78 @@ func getStatus() statusData {
 		st.BTProxy = "running"
 		st.BT = getBTInfo()
 	}
+	getSystem(&st)
 	return st
+}
+
+// --- userland / machine -----------------------------------------------------
+
+func getSystem(st *statusData) {
+	if b, err := os.ReadFile("/proc/cmdline"); err == nil {
+		st.Userland = strings.Contains(string(b), "oh=userland")
+	}
+	st.NextBoot = "stock"
+	printenv := "fw_printenv"
+	if _, err := os.Stat("/etc/fw_printenv"); err == nil {
+		printenv = "/etc/fw_printenv"
+	}
+	if out, err := exec.Command(printenv, "oh_next").Output(); err == nil && strings.Contains(string(out), "oh_try") {
+		st.NextBoot = "OpenHub2"
+	}
+	_, err := os.Stat(dataDir + "/userland.flashed")
+	st.CanUserland = err == nil || st.Userland
+	if st.Userland {
+		if b, err := os.ReadFile("/etc/os-release"); err == nil {
+			for _, line := range strings.Split(string(b), "\n") {
+				if v, ok := strings.CutPrefix(line, "VERSION_ID="); ok {
+					st.Image = v[:min(7, len(v))]
+				}
+			}
+		}
+	}
+	st.CPU = cpuUsage()
+	if b, err := os.ReadFile("/proc/meminfo"); err == nil {
+		var total, avail int
+		for _, line := range strings.Split(string(b), "\n") {
+			fmt.Sscanf(line, "MemTotal: %d kB", &total)
+			fmt.Sscanf(line, "MemAvailable: %d kB", &avail)
+		}
+		if total > 0 {
+			st.Memory = fmt.Sprintf("%d / %d MB", (total-avail)/1024, total/1024)
+		}
+	}
+	if b, err := os.ReadFile("/sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_cur_freq"); err == nil {
+		var khz int
+		fmt.Sscanf(string(b), "%d", &khz)
+		st.CPUFreq = fmt.Sprintf("%d MHz", khz/1000)
+	}
+}
+
+// cpuUsage samples /proc/stat over 200 ms.
+func cpuUsage() string {
+	read := func() (busy, total uint64) {
+		b, err := os.ReadFile("/proc/stat")
+		if err != nil {
+			return 0, 0
+		}
+		f := strings.Fields(strings.SplitN(string(b), "\n", 2)[0])
+		for i, v := range f[1:] {
+			var n uint64
+			fmt.Sscanf(v, "%d", &n)
+			total += n
+			if i != 3 && i != 4 { // idle, iowait
+				busy += n
+			}
+		}
+		return
+	}
+	b1, t1 := read()
+	time.Sleep(200 * time.Millisecond)
+	b2, t2 := read()
+	if t2 <= t1 {
+		return ""
+	}
+	return fmt.Sprintf("%d%%", (b2-b1)*100/(t2-t1))
 }
 
 func alive(name string) bool {
@@ -226,6 +308,18 @@ func getBTInfo() *btInfo {
 	}
 	return &info
 }
+
+type bleDevice struct {
+	Address      string `json:"address"`
+	AddressType  uint8  `json:"address_type"`
+	Name         string `json:"name"`
+	RSSI         int8   `json:"rssi"`
+	Manufacturer string `json:"manufacturer"`
+	Services     string `json:"services"`
+	LastSeen     string `json:"last_seen"`
+}
+
+func (d bleDevice) Seen() string { return zigbeeDevice{LastSeen: d.LastSeen}.Seen() }
 
 // --- handlers ---------------------------------------------------------------
 
@@ -320,6 +414,53 @@ func (s *server) rescan(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
+// system switches between the OpenHub2 userland and the stock firmware.
+func (s *server) system(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+	var action, label string
+	switch r.FormValue("to") {
+	case "stock":
+		action, label = "disable", "stock"
+	case "openhub2":
+		action, label = "enable", "OpenHub2"
+	default:
+		http.Error(w, "invalid target", http.StatusBadRequest)
+		return
+	}
+	out, err := exec.Command("sh", dataDir+"/userland.sh", action).CombinedOutput()
+	if err != nil {
+		http.Error(w, fmt.Sprintf("userland.sh %s: %v\n%s", action, err, out), http.StatusInternalServerError)
+		return
+	}
+	go func() {
+		time.Sleep(time.Second)
+		exec.Command("reboot").Run()
+	}()
+	s.tmpl.ExecuteTemplate(w, "rebooting", label)
+}
+
+func (s *server) bluetooth(w http.ResponseWriter, r *http.Request) {
+	data := struct {
+		Running bool
+		Devices []bleDevice
+	}{Running: alive("btproxy")}
+	if b, err := os.ReadFile("/tmp/btproxy-devices.json"); err == nil {
+		json.Unmarshal(b, &data.Devices)
+	}
+	// named devices first, then by signal strength
+	sort.SliceStable(data.Devices, func(i, j int) bool {
+		a, b := data.Devices[i], data.Devices[j]
+		if (a.Name != "") != (b.Name != "") {
+			return a.Name != ""
+		}
+		return a.RSSI > b.RSSI
+	})
+	s.tmpl.ExecuteTemplate(w, "bluetooth", data)
+}
+
 func (s *server) reboot(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
@@ -375,6 +516,7 @@ label{font-size:.9em;color:#52525b;font-weight:500}
 <nav>
 <span class="brand">OpenHub2</span>
 <a href="/">Status</a>
+<a href="/bluetooth">Bluetooth</a>
 <a href="/wifi">Wi-Fi</a>
 <a href="/logs">Logs</a>
 </nav>
@@ -388,10 +530,18 @@ label{font-size:.9em;color:#52525b;font-weight:500}
 {{define "dashboard"}}{{template "head"}}
 <div class="card">
 <h2>System</h2>
+<div class="row"><span class="lbl">Running</span>
+  <span class="val {{if .Userland}}ok{{else}}warn{{end}}">{{if .Userland}}OpenHub2 userland (slot A){{else}}Xiaomi stock (slot B){{end}}</span></div>
+{{if .CanUserland}}<div class="row"><span class="lbl">Next boot</span><span class="val">{{.NextBoot}}</span></div>{{end}}
+{{if .Image}}<div class="row"><span class="lbl">Image</span><span class="val">{{.Image}}</span></div>{{end}}
+{{if not .Userland}}
 <div class="row"><span class="lbl">Mode</span>
   <span class="val {{if eq .Mode "openhub2"}}ok{{else}}warn{{end}}">{{.Mode}}</span></div>
 <div class="row"><span class="lbl">Stock Zigbee</span>
   <span class="val {{if eq .StockZigbee "disabled"}}off{{else}}ok{{end}}">{{.StockZigbee}}</span></div>
+{{end}}
+{{if .CPU}}<div class="row"><span class="lbl">CPU</span><span class="val">{{.CPU}}{{if .CPUFreq}} · {{.CPUFreq}}{{end}}</span></div>{{end}}
+{{if .Memory}}<div class="row"><span class="lbl">Memory</span><span class="val">{{.Memory}}</span></div>{{end}}
 <div class="row"><span class="lbl">zbbridge</span>
   <span class="val {{if eq .ZbBridge "running"}}ok{{else}}off{{end}}">{{.ZbBridge}}{{if eq .ZbBridge "running"}} · tcp :8888{{end}}</span></div>
 <div class="row"><span class="lbl">NTP</span>
@@ -470,7 +620,18 @@ label{font-size:.9em;color:#52525b;font-weight:500}
 <div class="card">
 <h2>Actions</h2>
 <div class="act">
-{{if eq .Mode "xiaomi"}}
+{{if .Userland}}
+<form method="POST" action="/system" onsubmit="return confirm('Boot the stock Xiaomi system? The hub will reboot. Three button presses do the same.')">
+<input type="hidden" name="to" value="stock">
+<button>Switch to stock</button>
+</form>
+{{else if .CanUserland}}
+<form method="POST" action="/system" onsubmit="return confirm('Boot the OpenHub2 userland? The hub will reboot; a failed boot falls back to stock.')">
+<input type="hidden" name="to" value="openhub2">
+<button>Boot OpenHub2</button>
+</form>
+{{end}}
+{{if .Userland}}{{else if eq .Mode "xiaomi"}}
 <form method="POST" action="/mode" onsubmit="return confirm('Switch to OpenHub2? The hub will reboot.')">
 <input type="hidden" name="mode" value="openhub2">
 <button>Switch to OpenHub2</button>
@@ -486,6 +647,33 @@ label{font-size:.9em;color:#52525b;font-weight:500}
 </form>
 </div>
 </div>
+{{template "foot"}}{{end}}
+
+{{define "bluetooth"}}{{template "head"}}
+<div class="card">
+<h2>Bluetooth devices ({{len .Devices}}, last 10 min)</h2>
+{{if not .Running}}<p class="off" style="padding:8px 0">btproxy is not running.</p>{{end}}
+{{if .Devices}}
+<table style="width:100%;font-size:.85em;border-collapse:collapse">
+<tr style="text-align:left;border-bottom:2px solid #e4e4e7;color:#71717a;font-size:.82em">
+  <th style="padding:6px 4px">ADDRESS</th><th style="padding:6px 4px">NAME / TYPE</th>
+  <th style="padding:6px 4px">RSSI</th><th style="padding:6px 4px">SEEN</th>
+</tr>
+{{range .Devices}}
+<tr style="border-bottom:1px solid #f4f4f5">
+  <td style="padding:6px 4px;font-family:monospace;font-size:.9em">{{.Address}}{{if eq .AddressType 1}} <span class="off">rnd</span>{{end}}</td>
+  <td style="padding:6px 4px">{{if .Name}}<b>{{.Name}}</b>{{end}}
+    {{if .Services}}<span class="ok">{{.Services}}</span>{{end}}
+    {{if .Manufacturer}}<span class="off">{{.Manufacturer}}</span>{{end}}</td>
+  <td style="padding:6px 4px"><span class="{{if gt .RSSI -70}}ok{{else if gt .RSSI -85}}warn{{else}}off{{end}}">{{.RSSI}}</span></td>
+  <td style="padding:6px 4px;font-size:.9em">{{.Seen}}</td>
+</tr>
+{{end}}
+</table>
+{{end}}
+<p style="margin-top:10px;font-size:.8em;color:#a1a1aa">Refreshes every 15 s. Home Assistant receives all of these through the ESPHome Bluetooth proxy.</p>
+</div>
+<script>setTimeout(function(){location.reload()},15000)</script>
 {{template "foot"}}{{end}}
 
 {{define "wifi"}}{{template "head"}}
@@ -532,7 +720,7 @@ p{color:#71717a;font-size:.95em}
 </head>
 <body>
 <div class="box">
-<h1>Rebooting{{if .}} (mode → {{.}}){{end}}</h1>
+<h1>Rebooting{{if .}} → {{.}}{{end}}</h1>
 <p>The hub is restarting. This page will reload in 30 seconds.</p>
 </div>
 </body>
