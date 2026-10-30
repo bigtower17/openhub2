@@ -8,6 +8,13 @@ Xiaomi/Aqara, and it keeps working without the Xiaomi cloud.
 > Status: early, tested on one unit with stock firmware `1.0.7_0019`.
 > Use at your own risk. Not affiliated with Xiaomi.
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="doc/img/panel-overview-dark.png">
+  <img alt="OpenHub2 web panel, overview" src="doc/img/panel-overview-light.png">
+</picture>
+
+*The web panel (demo data).*
+
 ## What works
 
 - **Root SSH** (`gatessh`): a small SSH server with shell, remote commands and
@@ -36,6 +43,9 @@ Xiaomi/Aqara, and it keeps working without the Xiaomi cloud.
   ESPHome proxy), 24 h charts kept in memory, Zigbee and Bluetooth device
   lists, Wi-Fi scan and join, system and mode switch, LED color, logs.
   Everything is embedded in one binary and works without internet.
+  Screenshots: [Zigbee](doc/img/panel-zigbee-light.png),
+  [Bluetooth](doc/img/panel-bluetooth-light.png),
+  [System](doc/img/panel-system-light.png).
 - **OpenHub2 userland** (experimental): a Buildroot root filesystem for the
   hub's spare firmware slot that replaces all Xiaomi services. It boots in
   about 20 seconds, uses ~20 MB of RAM, runs the same services as above
