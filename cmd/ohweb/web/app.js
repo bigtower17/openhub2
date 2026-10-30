@@ -50,7 +50,7 @@ window.addEventListener('hashchange', showTab);
 // --- charts --------------------------------------------------------------------
 
 function chart(svg, series, opts = {}) {
-  const W = 600, H = 150, L = 40, R = 8, T = 8, B = 18;
+  const W = 600, H = 150, L = 56, R = 8, T = 8, B = 18;
   svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
   svg.setAttribute('preserveAspectRatio', 'none');
   const n = Math.max(...series.map((s) => s.values.length), 0);
